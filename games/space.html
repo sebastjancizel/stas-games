@@ -1,0 +1,1705 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Staš Space Adventure</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      background: #000;
+      font-family: 'Courier New', monospace;
+      overflow: hidden;
+    }
+
+    .back-btn {
+      position: fixed;
+      top: 20px;
+      left: 20px;
+      padding: 10px 20px;
+      background: rgba(0, 255, 0, 0.1);
+      border: 2px solid #0f0;
+      border-radius: 8px;
+      color: #0f0;
+      font-family: inherit;
+      font-size: 14px;
+      cursor: pointer;
+      text-decoration: none;
+      z-index: 1000;
+      transition: all 0.2s;
+      text-shadow: 0 0 10px #0f0;
+    }
+    .back-btn:hover {
+      background: rgba(0, 255, 0, 0.3);
+      transform: scale(1.05);
+    }
+
+    #gameContainer {
+      position: relative;
+    }
+
+    #gameCanvas {
+      border: 2px solid #333;
+      background: #000;
+    }
+
+    #ui {
+      position: absolute;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      color: #0f0;
+      font-size: 18px;
+      text-align: center;
+      text-shadow: 0 0 10px #0f0;
+    }
+
+    #instructions {
+      position: absolute;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      color: #888;
+      font-size: 14px;
+      text-align: center;
+    }
+  </style>
+</head>
+
+<body>
+  <a href="../index.html" class="back-btn">← Menu</a>
+  <div id="gameContainer">
+    <div id="ui">
+      <div id="score">Score: 0</div>
+      <div id="phase">Phase: Space Flight</div>
+    </div>
+    <canvas id="gameCanvas" width="900" height="650"></canvas>
+    <div id="instructions">Arrow Keys / WASD to move | SPACE to shoot | Land on the Moon!</div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const scoreEl = document.getElementById('score');
+    const phaseEl = document.getElementById('phase');
+    const instructionsEl = document.getElementById('instructions');
+
+    // Game state
+    let gamePhase = 'space';
+    let score = 0;
+    let gameOver = false;
+    let victory = false;
+    let screenShake = 0;
+    let screenShakeX = 0;
+    let screenShakeY = 0;
+
+    // Moon timer
+    const MOON_TIME_LIMIT = 25; // seconds
+    let moonTimer = MOON_TIME_LIMIT;
+    let moonExploding = false;
+    let moonExplosionParticles = [];
+
+    // Parallax star layers
+    const starLayers = [
+      {stars: [], speed: 0.3, size: 0.5, count: 100},
+      {stars: [], speed: 0.7, size: 1, count: 80},
+      {stars: [], speed: 1.5, size: 1.5, count: 50},
+      {stars: [], speed: 2.5, size: 2, count: 30}
+    ];
+
+    starLayers.forEach(layer => {
+      for (let i = 0; i < layer.count; i++) {
+        layer.stars.push({
+          x: Math.random() * canvas.width,
+          y: Math.random() * canvas.height,
+          brightness: Math.random() * 0.5 + 0.5,
+          twinkle: Math.random() * Math.PI * 2,
+          color: ['#fff', '#ffd', '#ddf', '#fdf'][Math.floor(Math.random() * 4)]
+        });
+      }
+    });
+
+    // Nebula clouds for background
+    const nebulae = Array.from({length: 5}, () => ({
+      x: Math.random() * canvas.width,
+      y: Math.random() * canvas.height,
+      radius: Math.random() * 150 + 100,
+      color: `hsla(${Math.random() * 60 + 200}, 70%, 30%, 0.1)`,
+      speed: Math.random() * 0.2 + 0.1
+    }));
+
+    // Spaceship with physics
+    const ship = {
+      x: 100,
+      y: canvas.height / 2,
+      vx: 0,
+      vy: 0,
+      width: 60,
+      height: 35,
+      acceleration: 0.4,
+      friction: 0.96,
+      maxSpeed: 7,
+      health: 100,
+      maxHealth: 100,
+      angle: 0,
+      targetAngle: 0,
+      enginePower: 0
+    };
+
+    // Staš character with physics
+    const stas = {
+      x: 100,
+      y: 0,
+      vx: 0,
+      width: 45,
+      height: 65,
+      speed: 0.5,
+      maxSpeed: 5,
+      friction: 0.85,
+      jumping: false,
+      velocityY: 0,
+      health: 100,
+      maxHealth: 100,
+      direction: 1,
+      walkFrame: 0,
+      invincible: 0
+    };
+
+    // Game objects
+    let bullets = [];
+    let comets = [];
+    let aliens = [];
+    let alienBullets = [];
+    let particles = [];
+    let healthPacks = [];
+    let cometTrails = [];
+    let muzzleFlashes = [];
+
+    // Moon
+    const moon = {
+      x: canvas.width - 180,
+      y: canvas.height / 2 - 80,
+      radius: 90
+    };
+
+    // Controls
+    const keys = {};
+    document.addEventListener('keydown', e => {
+      keys[e.code] = true;
+      if (e.code === 'Space') e.preventDefault();
+    });
+    document.addEventListener('keyup', e => keys[e.code] = false);
+
+    let canShoot = true;
+    let shootCooldown = 180;
+
+    function shoot() {
+      if (!canShoot) return;
+      canShoot = false;
+
+      if (gamePhase === 'space' || gamePhase === 'landing') {
+        const bulletSpeed = 12;
+        bullets.push({
+          x: ship.x + ship.width,
+          y: ship.y + ship.height / 2,
+          vx: bulletSpeed + ship.vx * 0.3,
+          vy: ship.vy * 0.2,
+          width: 20,
+          height: 4,
+          life: 100,
+          type: 'laser'
+        });
+        muzzleFlashes.push({
+          x: ship.x + ship.width,
+          y: ship.y + ship.height / 2,
+          life: 5
+        });
+        ship.vx -= 0.5; // Recoil
+      } else if (gamePhase === 'moon') {
+        bullets.push({
+          x: stas.x + (stas.direction === 1 ? stas.width : 0),
+          y: stas.y + stas.height / 2 - 8,
+          vx: 10 * stas.direction,
+          vy: 0,
+          width: 12,
+          height: 5,
+          life: 80,
+          type: 'plasma'
+        });
+        muzzleFlashes.push({
+          x: stas.x + (stas.direction === 1 ? stas.width + 10 : -10),
+          y: stas.y + stas.height / 2 - 8,
+          life: 4
+        });
+        stas.vx -= 1 * stas.direction; // Recoil
+      }
+
+      setTimeout(() => canShoot = true, shootCooldown);
+    }
+
+    function spawnComet() {
+      if (gamePhase !== 'space') return;
+      const size = Math.random() * 25 + 18;
+      const rand = Math.random();
+      // 25% chance for indestructible asteroid
+      const cometType = rand > 0.75 ? 'asteroid' : (rand > 0.5 ? 'ice' : 'rock');
+      comets.push({
+        x: canvas.width + 60,
+        y: Math.random() * (canvas.height - 100) + 50,
+        vx: -(Math.random() * 3 + (cometType === 'asteroid' ? 3.5 : 2.5)),
+        vy: (Math.random() - 0.5) * 1.5,
+        radius: cometType === 'asteroid' ? size * 1.3 : size,
+        rotation: 0,
+        rotationSpeed: (Math.random() - 0.5) * 0.08,
+        type: cometType,
+        indestructible: cometType === 'asteroid',
+        craters: Array.from({length: 4}, () => ({
+          x: (Math.random() - 0.5) * size * 0.8,
+          y: (Math.random() - 0.5) * size * 0.8,
+          r: Math.random() * size * 0.25 + 3
+        }))
+      });
+    }
+
+    function spawnHealthPack() {
+      if (gamePhase === 'space' || gamePhase === 'landing') {
+        healthPacks.push({
+          x: canvas.width + 30,
+          y: Math.random() * (canvas.height - 100) + 50,
+          vx: -2,
+          vy: 0,
+          size: 25,
+          rotation: 0,
+          pulse: 0,
+          type: 'space'
+        });
+      } else if (gamePhase === 'moon') {
+        healthPacks.push({
+          x: canvas.width + 30,
+          y: canvas.height - 100 - 30,
+          vx: -1.5,
+          vy: 0,
+          size: 25,
+          rotation: 0,
+          pulse: 0,
+          type: 'ground'
+        });
+      }
+    }
+
+    function spawnAlien() {
+      if (gamePhase !== 'moon') return;
+      const groundY = canvas.height - 100;
+      const type = Math.random() > 0.6 ? 'grunt' : 'shooter';
+      aliens.push({
+        x: canvas.width + 40,
+        y: groundY - 55,
+        vx: 0,
+        width: 40,
+        height: 55,
+        speed: type === 'grunt' ? 2 : 1,
+        health: type === 'grunt' ? 40 : 60,
+        maxHealth: type === 'grunt' ? 40 : 60,
+        shootTimer: Math.random() * 60 + 40,
+        type,
+        frame: 0,
+        hit: 0
+      });
+    }
+
+    function createExplosion(x, y, color = '#f80', count = 20, speed = 8) {
+      for (let i = 0; i < count; i++) {
+        const angle = (Math.PI * 2 / count) * i + Math.random() * 0.5;
+        const vel = Math.random() * speed + 2;
+        particles.push({
+          x, y,
+          vx: Math.cos(angle) * vel,
+          vy: Math.sin(angle) * vel,
+          life: 40 + Math.random() * 20,
+          maxLife: 60,
+          color,
+          size: Math.random() * 5 + 2,
+          type: 'explosion'
+        });
+      }
+      // Add smoke
+      for (let i = 0; i < 8; i++) {
+        particles.push({
+          x: x + (Math.random() - 0.5) * 20,
+          y: y + (Math.random() - 0.5) * 20,
+          vx: (Math.random() - 0.5) * 2,
+          vy: (Math.random() - 0.5) * 2 - 1,
+          life: 50,
+          maxLife: 50,
+          color: '#444',
+          size: Math.random() * 15 + 10,
+          type: 'smoke'
+        });
+      }
+    }
+
+    function createSparks(x, y) {
+      for (let i = 0; i < 8; i++) {
+        particles.push({
+          x, y,
+          vx: (Math.random() - 0.5) * 10,
+          vy: (Math.random() - 0.5) * 10,
+          life: 15,
+          maxLife: 15,
+          color: '#ff0',
+          size: 2,
+          type: 'spark'
+        });
+      }
+    }
+
+    function addScreenShake(intensity) {
+      screenShake = Math.max(screenShake, intensity);
+    }
+
+    function drawShip(x, y) {
+      ctx.save();
+      ctx.translate(x + ship.width / 2, y + ship.height / 2);
+      ctx.rotate(ship.angle);
+      ctx.translate(-ship.width / 2, -ship.height / 2);
+
+      // Engine glow
+      const glowSize = 20 + ship.enginePower * 30;
+      const gradient = ctx.createRadialGradient(-10, ship.height / 2, 0, -10, ship.height / 2, glowSize);
+      gradient.addColorStop(0, 'rgba(255, 150, 50, 0.8)');
+      gradient.addColorStop(0.5, 'rgba(255, 100, 0, 0.3)');
+      gradient.addColorStop(1, 'rgba(255, 50, 0, 0)');
+      ctx.fillStyle = gradient;
+      ctx.beginPath();
+      ctx.arc(-10, ship.height / 2, glowSize, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Engine flame
+      if (ship.enginePower > 0.1) {
+        ctx.fillStyle = '#fff';
+        ctx.beginPath();
+        ctx.moveTo(0, ship.height / 2 - 5);
+        ctx.lineTo(-8 - ship.enginePower * 15, ship.height / 2);
+        ctx.lineTo(0, ship.height / 2 + 5);
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.fillStyle = `hsl(${30 + Math.random() * 20}, 100%, 50%)`;
+        ctx.beginPath();
+        ctx.moveTo(0, ship.height / 2 - 8);
+        ctx.lineTo(-15 - ship.enginePower * 25 - Math.random() * 10, ship.height / 2);
+        ctx.lineTo(0, ship.height / 2 + 8);
+        ctx.closePath();
+        ctx.fill();
+      }
+
+      // Ship body - metallic look
+      const bodyGrad = ctx.createLinearGradient(0, 0, 0, ship.height);
+      bodyGrad.addColorStop(0, '#6cf');
+      bodyGrad.addColorStop(0.5, '#2a6');
+      bodyGrad.addColorStop(1, '#147');
+      ctx.fillStyle = bodyGrad;
+
+      ctx.beginPath();
+      ctx.moveTo(ship.width, ship.height / 2);
+      ctx.quadraticCurveTo(ship.width - 10, 0, 15, 2);
+      ctx.lineTo(0, 8);
+      ctx.lineTo(5, ship.height / 2);
+      ctx.lineTo(0, ship.height - 8);
+      ctx.lineTo(15, ship.height - 2);
+      ctx.quadraticCurveTo(ship.width - 10, ship.height, ship.width, ship.height / 2);
+      ctx.closePath();
+      ctx.fill();
+
+      // Highlight
+      ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(ship.width - 5, ship.height / 2 - 8);
+      ctx.quadraticCurveTo(ship.width - 15, 5, 20, 5);
+      ctx.stroke();
+
+      // Cockpit
+      const cockpitGrad = ctx.createRadialGradient(30, ship.height / 2 - 3, 0, 30, ship.height / 2, 10);
+      cockpitGrad.addColorStop(0, '#aff');
+      cockpitGrad.addColorStop(1, '#048');
+      ctx.fillStyle = cockpitGrad;
+      ctx.beginPath();
+      ctx.ellipse(30, ship.height / 2, 10, 7, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Wing details
+      ctx.fillStyle = '#358';
+      ctx.fillRect(12, 2, 20, 4);
+      ctx.fillRect(12, ship.height - 6, 20, 4);
+
+      ctx.restore();
+    }
+
+    function drawStas(x, y) {
+      ctx.save();
+      ctx.translate(x, y);
+
+      const flash = stas.invincible > 0 && Math.floor(stas.invincible / 4) % 2 === 0;
+      if (flash) ctx.globalAlpha = 0.5;
+
+      if (stas.direction === -1) {
+        ctx.scale(-1, 1);
+        ctx.translate(-stas.width, 0);
+      }
+
+      const bobY = Math.abs(stas.vx) > 0.5 ? Math.sin(stas.walkFrame * 0.3) * 2 : 0;
+
+      // Shadow
+      ctx.fillStyle = 'rgba(0,0,0,0.3)';
+      ctx.beginPath();
+      ctx.ellipse(22, stas.height + 2, 18, 5, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Legs with animation
+      const legOffset = Math.abs(stas.vx) > 0.5 ? Math.sin(stas.walkFrame * 0.3) * 5 : 0;
+      ctx.fillStyle = '#2244aa';
+      ctx.fillRect(10 + legOffset, 48 + bobY, 11, 17);
+      ctx.fillRect(24 - legOffset, 48 + bobY, 11, 17);
+
+      // Shoes
+      ctx.fillStyle = '#333';
+      ctx.fillRect(8 + legOffset, 62 + bobY, 14, 5);
+      ctx.fillRect(22 - legOffset, 62 + bobY, 14, 5);
+
+      // Body - space suit
+      const bodyGrad = ctx.createLinearGradient(5, 20, 40, 50);
+      bodyGrad.addColorStop(0, '#e55');
+      bodyGrad.addColorStop(1, '#a22');
+      ctx.fillStyle = bodyGrad;
+      ctx.beginPath();
+      ctx.roundRect(7, 22 + bobY, 31, 28, 5);
+      ctx.fill();
+
+      // Suit details
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(18, 26 + bobY, 9, 12);
+      ctx.fillStyle = '#48f';
+      ctx.fillRect(20, 28 + bobY, 5, 8);
+
+      // Belt
+      ctx.fillStyle = '#640';
+      ctx.fillRect(7, 45 + bobY, 31, 4);
+
+      // Head
+      ctx.fillStyle = '#fdc';
+      ctx.beginPath();
+      ctx.arc(22, 14 + bobY, 13, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Hair
+      ctx.fillStyle = '#530';
+      ctx.beginPath();
+      ctx.arc(22, 10 + bobY, 11, Math.PI, 0);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(11, 10 + bobY);
+      ctx.quadraticCurveTo(15, 5 + bobY, 22, 3 + bobY);
+      ctx.quadraticCurveTo(29, 5 + bobY, 33, 10 + bobY);
+      ctx.fill();
+
+      // Eyes
+      ctx.fillStyle = '#fff';
+      ctx.beginPath();
+      ctx.ellipse(17, 12 + bobY, 4, 5, 0, 0, Math.PI * 2);
+      ctx.ellipse(27, 12 + bobY, 4, 5, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = '#432';
+      ctx.beginPath();
+      ctx.arc(18, 13 + bobY, 2.5, 0, Math.PI * 2);
+      ctx.arc(28, 13 + bobY, 2.5, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Eye shine
+      ctx.fillStyle = '#fff';
+      ctx.beginPath();
+      ctx.arc(17, 11 + bobY, 1, 0, Math.PI * 2);
+      ctx.arc(27, 11 + bobY, 1, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Smile
+      ctx.strokeStyle = '#a55';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(24, 17 + bobY, 5, 0.2, Math.PI - 0.2);
+      ctx.stroke();
+
+      // Arm and gun
+      ctx.fillStyle = '#fdc';
+      ctx.fillRect(36, 30 + bobY, 8, 6);
+
+      // Gun - detailed
+      ctx.fillStyle = '#555';
+      ctx.fillRect(40, 26 + bobY, 18, 10);
+      ctx.fillStyle = '#333';
+      ctx.fillRect(40, 28 + bobY, 20, 6);
+      ctx.fillStyle = '#f80';
+      ctx.fillRect(58, 29 + bobY, 4, 4);
+
+      ctx.restore();
+    }
+
+    function drawAlien(alien) {
+      ctx.save();
+      ctx.translate(alien.x, alien.y);
+
+      if (alien.hit > 0) {
+        ctx.filter = 'brightness(2)';
+      }
+
+      const wobble = Math.sin(Date.now() * 0.01 + alien.x) * 2;
+
+      // Shadow
+      ctx.fillStyle = 'rgba(0,0,0,0.3)';
+      ctx.beginPath();
+      ctx.ellipse(20, alien.height + 2, 18, 5, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Tentacle legs
+      ctx.strokeStyle = alien.type === 'shooter' ? '#0a0' : '#0d0';
+      ctx.lineWidth = 6;
+      ctx.lineCap = 'round';
+      for (let i = 0; i < 3; i++) {
+        const offset = Math.sin(Date.now() * 0.005 + i) * 3;
+        ctx.beginPath();
+        ctx.moveTo(10 + i * 10, 45);
+        ctx.quadraticCurveTo(5 + i * 10 + offset, 52, 8 + i * 10 + offset * 0.5, 58);
+        ctx.stroke();
+      }
+
+      // Body
+      const bodyGrad = ctx.createRadialGradient(20, 28, 5, 20, 30, 25);
+      bodyGrad.addColorStop(0, alien.type === 'shooter' ? '#4f4' : '#6f6');
+      bodyGrad.addColorStop(1, alien.type === 'shooter' ? '#070' : '#0a0');
+      ctx.fillStyle = bodyGrad;
+      ctx.beginPath();
+      ctx.ellipse(20, 30 + wobble, 18, 22, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Spots
+      ctx.fillStyle = 'rgba(0,80,0,0.5)';
+      ctx.beginPath();
+      ctx.arc(12, 25 + wobble, 4, 0, Math.PI * 2);
+      ctx.arc(28, 32 + wobble, 3, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Head
+      const headGrad = ctx.createRadialGradient(20, 8, 2, 20, 10, 14);
+      headGrad.addColorStop(0, '#8f8');
+      headGrad.addColorStop(1, '#0a0');
+      ctx.fillStyle = headGrad;
+      ctx.beginPath();
+      ctx.ellipse(20, 10 + wobble, 14, 12, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Eyes - big and menacing
+      ctx.fillStyle = '#000';
+      ctx.beginPath();
+      ctx.ellipse(13, 8 + wobble, 5, 7, -0.2, 0, Math.PI * 2);
+      ctx.ellipse(27, 8 + wobble, 5, 7, 0.2, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Eye glow
+      ctx.fillStyle = '#f00';
+      ctx.beginPath();
+      ctx.arc(14, 7 + wobble, 2, 0, Math.PI * 2);
+      ctx.arc(28, 7 + wobble, 2, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Antenna
+      ctx.strokeStyle = '#0d0';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(20, -2 + wobble);
+      ctx.lineTo(20, -10 + wobble + Math.sin(Date.now() * 0.02) * 2);
+      ctx.stroke();
+      ctx.fillStyle = '#ff0';
+      ctx.beginPath();
+      ctx.arc(20, -12 + wobble + Math.sin(Date.now() * 0.02) * 2, 3, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Gun for shooter type
+      if (alien.type === 'shooter') {
+        ctx.fillStyle = '#444';
+        ctx.fillRect(-5, 25 + wobble, 12, 8);
+        ctx.fillStyle = '#a00';
+        ctx.fillRect(-8, 27 + wobble, 5, 4);
+      }
+
+      ctx.restore();
+    }
+
+    function drawComet(comet) {
+      // Add trail particles
+      if (Math.random() > 0.5) {
+        cometTrails.push({
+          x: comet.x + comet.radius,
+          y: comet.y + (Math.random() - 0.5) * comet.radius,
+          size: Math.random() * comet.radius * 0.4 + 2,
+          life: 30,
+          maxLife: 30,
+          color: comet.type === 'ice' ? '#8df' : '#fa0'
+        });
+      }
+
+      ctx.save();
+      ctx.translate(comet.x, comet.y);
+      ctx.rotate(comet.rotation);
+
+      // Glow
+      const glowGrad = ctx.createRadialGradient(0, 0, comet.radius * 0.5, 0, 0, comet.radius * 2);
+      if (comet.type === 'asteroid') {
+        glowGrad.addColorStop(0, 'rgba(150,50,50,0.4)');
+      } else if (comet.type === 'ice') {
+        glowGrad.addColorStop(0, 'rgba(100,200,255,0.3)');
+      } else {
+        glowGrad.addColorStop(0, 'rgba(255,150,50,0.3)');
+      }
+      glowGrad.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = glowGrad;
+      ctx.beginPath();
+      ctx.arc(0, 0, comet.radius * 2, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Main body
+      const bodyGrad = ctx.createRadialGradient(-comet.radius * 0.3, -comet.radius * 0.3, 0, 0, 0, comet.radius);
+      if (comet.type === 'asteroid') {
+        // Dark, metallic indestructible asteroid
+        bodyGrad.addColorStop(0, '#666');
+        bodyGrad.addColorStop(0.3, '#444');
+        bodyGrad.addColorStop(0.7, '#222');
+        bodyGrad.addColorStop(1, '#111');
+      } else if (comet.type === 'ice') {
+        bodyGrad.addColorStop(0, '#fff');
+        bodyGrad.addColorStop(0.3, '#aef');
+        bodyGrad.addColorStop(1, '#246');
+      } else {
+        bodyGrad.addColorStop(0, '#fff');
+        bodyGrad.addColorStop(0.2, '#fa0');
+        bodyGrad.addColorStop(0.6, '#840');
+        bodyGrad.addColorStop(1, '#420');
+      }
+
+      ctx.fillStyle = bodyGrad;
+      ctx.beginPath();
+      ctx.arc(0, 0, comet.radius, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Craters
+      ctx.fillStyle = 'rgba(0,0,0,0.3)';
+      comet.craters.forEach(crater => {
+        ctx.beginPath();
+        ctx.arc(crater.x, crater.y, crater.r, 0, Math.PI * 2);
+        ctx.fill();
+      });
+
+      // Surface texture
+      ctx.strokeStyle = 'rgba(0,0,0,0.2)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(3, 3, comet.radius * 0.6, 0, Math.PI * 0.8);
+      ctx.stroke();
+
+      // Warning skull icon for indestructible asteroids
+      if (comet.indestructible) {
+        // Pulsing red ring
+        const pulseAlpha = 0.4 + Math.sin(Date.now() * 0.01) * 0.3;
+        ctx.strokeStyle = `rgba(255, 50, 50, ${pulseAlpha})`;
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(0, 0, comet.radius + 8, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // Metallic cracks
+        ctx.strokeStyle = '#888';
+        ctx.lineWidth = 2;
+        for (let i = 0; i < 3; i++) {
+          ctx.beginPath();
+          ctx.moveTo(comet.radius * 0.2 * Math.cos(i * 2), comet.radius * 0.2 * Math.sin(i * 2));
+          ctx.lineTo(comet.radius * 0.8 * Math.cos(i * 2 + 0.5), comet.radius * 0.8 * Math.sin(i * 2 + 0.5));
+          ctx.stroke();
+        }
+      }
+
+      ctx.restore();
+    }
+
+    function drawHealthPack(pack) {
+      ctx.save();
+      ctx.translate(pack.x, pack.y);
+      ctx.rotate(pack.rotation);
+
+      const pulse = Math.sin(pack.pulse) * 0.2 + 1;
+      const size = pack.size * pulse;
+
+      // Glow
+      const glowGrad = ctx.createRadialGradient(0, 0, size * 0.3, 0, 0, size * 1.5);
+      glowGrad.addColorStop(0, 'rgba(50,255,50,0.5)');
+      glowGrad.addColorStop(1, 'rgba(50,255,50,0)');
+      ctx.fillStyle = glowGrad;
+      ctx.beginPath();
+      ctx.arc(0, 0, size * 1.5, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Box
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(-size / 2, -size / 2, size, size);
+
+      // Red cross
+      ctx.fillStyle = '#f22';
+      ctx.fillRect(-size * 0.35, -size * 0.12, size * 0.7, size * 0.24);
+      ctx.fillRect(-size * 0.12, -size * 0.35, size * 0.24, size * 0.7);
+
+      // Shine
+      ctx.fillStyle = 'rgba(255,255,255,0.6)';
+      ctx.fillRect(-size / 2, -size / 2, size * 0.3, size * 0.15);
+
+      ctx.restore();
+    }
+
+    function drawMoon() {
+      // Moon glow
+      const glowGrad = ctx.createRadialGradient(moon.x, moon.y, moon.radius, moon.x, moon.y, moon.radius * 1.8);
+      glowGrad.addColorStop(0, 'rgba(200,200,200,0.2)');
+      glowGrad.addColorStop(1, 'rgba(200,200,200,0)');
+      ctx.fillStyle = glowGrad;
+      ctx.beginPath();
+      ctx.arc(moon.x, moon.y, moon.radius * 1.8, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Moon surface
+      const gradient = ctx.createRadialGradient(
+        moon.x - 30, moon.y - 30, 10,
+        moon.x, moon.y, moon.radius
+      );
+      gradient.addColorStop(0, '#eee');
+      gradient.addColorStop(0.5, '#bbb');
+      gradient.addColorStop(1, '#777');
+
+      ctx.fillStyle = gradient;
+      ctx.beginPath();
+      ctx.arc(moon.x, moon.y, moon.radius, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Detailed craters
+      const craters = [
+        {x: -25, y: -25, r: 18},
+        {x: 30, y: 15, r: 14},
+        {x: -15, y: 35, r: 12},
+        {x: 20, y: -40, r: 10},
+        {x: -40, y: 10, r: 8}
+      ];
+
+      craters.forEach(crater => {
+        const craterGrad = ctx.createRadialGradient(
+          moon.x + crater.x + 2, moon.y + crater.y + 2, 0,
+          moon.x + crater.x, moon.y + crater.y, crater.r
+        );
+        craterGrad.addColorStop(0, 'rgba(0,0,0,0.3)');
+        craterGrad.addColorStop(0.7, 'rgba(0,0,0,0.2)');
+        craterGrad.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = craterGrad;
+        ctx.beginPath();
+        ctx.arc(moon.x + crater.x, moon.y + crater.y, crater.r, 0, Math.PI * 2);
+        ctx.fill();
+      });
+
+      // Landing zone
+      if (gamePhase === 'landing') {
+        const pulseAlpha = 0.4 + Math.sin(Date.now() / 150) * 0.3;
+        ctx.strokeStyle = `rgba(0, 255, 100, ${pulseAlpha})`;
+        ctx.lineWidth = 3;
+        ctx.setLineDash([10, 5]);
+        ctx.beginPath();
+        ctx.arc(moon.x, moon.y, moon.radius + 25, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // Arrow pointing to moon
+        ctx.fillStyle = `rgba(0, 255, 100, ${pulseAlpha})`;
+        ctx.font = 'bold 16px Courier New';
+        ctx.fillText('LAND HERE', moon.x - 45, moon.y - moon.radius - 35);
+      }
+    }
+
+    function drawMoonSurface() {
+      // Sky with stars
+      const skyGrad = ctx.createLinearGradient(0, 0, 0, canvas.height);
+      skyGrad.addColorStop(0, '#000015');
+      skyGrad.addColorStop(0.7, '#000025');
+      skyGrad.addColorStop(1, '#000020');
+      ctx.fillStyle = skyGrad;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // Distant mountains
+      ctx.fillStyle = '#222';
+      ctx.beginPath();
+      ctx.moveTo(0, canvas.height - 150);
+      for (let x = 0; x <= canvas.width; x += 50) {
+        ctx.lineTo(x, canvas.height - 150 - Math.sin(x * 0.02) * 30 - Math.random() * 10);
+      }
+      ctx.lineTo(canvas.width, canvas.height);
+      ctx.lineTo(0, canvas.height);
+      ctx.closePath();
+      ctx.fill();
+
+      // Ground
+      const groundGrad = ctx.createLinearGradient(0, canvas.height - 100, 0, canvas.height);
+      groundGrad.addColorStop(0, '#666');
+      groundGrad.addColorStop(0.3, '#555');
+      groundGrad.addColorStop(1, '#333');
+      ctx.fillStyle = groundGrad;
+      ctx.fillRect(0, canvas.height - 100, canvas.width, 100);
+
+      // Surface rocks and craters
+      ctx.fillStyle = '#444';
+      for (let i = 0; i < 30; i++) {
+        const rx = (i * 37) % canvas.width;
+        const ry = canvas.height - 90 + Math.sin(i) * 10;
+        ctx.beginPath();
+        ctx.ellipse(rx, ry, 15 + (i % 10), 8 + (i % 5), 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // Small rocks
+      ctx.fillStyle = '#555';
+      for (let i = 0; i < 50; i++) {
+        ctx.beginPath();
+        ctx.arc((i * 23) % canvas.width, canvas.height - 95 + (i % 20), 3 + (i % 4), 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // Earth in sky
+      const earthGrad = ctx.createRadialGradient(680, 90, 10, 700, 100, 50);
+      earthGrad.addColorStop(0, '#6af');
+      earthGrad.addColorStop(0.7, '#38a');
+      earthGrad.addColorStop(1, '#147');
+      ctx.fillStyle = earthGrad;
+      ctx.beginPath();
+      ctx.arc(700, 100, 50, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Continents
+      ctx.fillStyle = '#4a6';
+      ctx.beginPath();
+      ctx.ellipse(685, 90, 15, 20, 0.3, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.ellipse(715, 110, 12, 15, -0.2, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Clouds
+      ctx.fillStyle = 'rgba(255,255,255,0.4)';
+      ctx.beginPath();
+      ctx.ellipse(690, 80, 20, 5, 0.5, 0, Math.PI * 2);
+      ctx.ellipse(710, 105, 15, 4, -0.3, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Atmosphere glow
+      ctx.strokeStyle = 'rgba(100,150,255,0.3)';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(700, 100, 53, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    function drawHealthBar(x, y, health, maxHealth, width = 60, height = 8) {
+      // Background
+      ctx.fillStyle = '#300';
+      ctx.fillRect(x - 1, y - 1, width + 2, height + 2);
+
+      // Health gradient
+      const healthPercent = health / maxHealth;
+      const hue = healthPercent * 120;
+      const healthGrad = ctx.createLinearGradient(x, y, x, y + height);
+      healthGrad.addColorStop(0, `hsl(${hue}, 100%, 50%)`);
+      healthGrad.addColorStop(1, `hsl(${hue}, 100%, 30%)`);
+      ctx.fillStyle = healthGrad;
+      ctx.fillRect(x, y, width * healthPercent, height);
+
+      // Shine
+      ctx.fillStyle = 'rgba(255,255,255,0.3)';
+      ctx.fillRect(x, y, width * healthPercent, height / 3);
+    }
+
+    function drawMuzzleFlash(flash) {
+      ctx.save();
+      ctx.globalAlpha = flash.life / 5;
+      const grad = ctx.createRadialGradient(flash.x, flash.y, 0, flash.x, flash.y, 15);
+      grad.addColorStop(0, '#fff');
+      grad.addColorStop(0.3, '#ff0');
+      grad.addColorStop(1, 'rgba(255,100,0,0)');
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(flash.x, flash.y, 15, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+
+    function update() {
+      if (gameOver || victory) return;
+
+      // Update screen shake
+      if (screenShake > 0) {
+        screenShakeX = (Math.random() - 0.5) * screenShake;
+        screenShakeY = (Math.random() - 0.5) * screenShake;
+        screenShake *= 0.9;
+        if (screenShake < 0.5) screenShake = 0;
+      }
+
+      // Update parallax stars
+      starLayers.forEach(layer => {
+        layer.stars.forEach(star => {
+          star.x -= layer.speed;
+          star.twinkle += 0.05;
+          if (star.x < 0) {
+            star.x = canvas.width;
+            star.y = Math.random() * canvas.height;
+          }
+        });
+      });
+
+      // Update nebulae
+      nebulae.forEach(nebula => {
+        nebula.x -= nebula.speed;
+        if (nebula.x < -nebula.radius) {
+          nebula.x = canvas.width + nebula.radius;
+          nebula.y = Math.random() * canvas.height;
+        }
+      });
+
+      // Space phase controls with physics
+      if (gamePhase === 'space' || gamePhase === 'landing') {
+        ship.enginePower = 0;
+
+        if (keys['ArrowUp'] || keys['KeyW']) {
+          ship.vy -= ship.acceleration;
+          ship.enginePower = 0.5;
+        }
+        if (keys['ArrowDown'] || keys['KeyS']) {
+          ship.vy += ship.acceleration;
+        }
+        if (keys['ArrowLeft'] || keys['KeyA']) {
+          ship.vx -= ship.acceleration;
+        }
+        if (keys['ArrowRight'] || keys['KeyD']) {
+          ship.vx += ship.acceleration;
+          ship.enginePower = 1;
+        }
+        if (keys['Space']) shoot();
+
+        // Apply friction
+        ship.vx *= ship.friction;
+        ship.vy *= ship.friction;
+
+        // Limit speed
+        const speed = Math.sqrt(ship.vx * ship.vx + ship.vy * ship.vy);
+        if (speed > ship.maxSpeed) {
+          ship.vx = (ship.vx / speed) * ship.maxSpeed;
+          ship.vy = (ship.vy / speed) * ship.maxSpeed;
+        }
+
+        // Update position
+        ship.x += ship.vx;
+        ship.y += ship.vy;
+
+        // Ship tilt based on vertical velocity
+        ship.targetAngle = ship.vy * 0.03;
+        ship.angle += (ship.targetAngle - ship.angle) * 0.1;
+
+        // Bounds
+        ship.x = Math.max(0, Math.min(canvas.width - ship.width, ship.x));
+        ship.y = Math.max(0, Math.min(canvas.height - ship.height, ship.y));
+
+        // Check moon landing
+        if (gamePhase === 'landing') {
+          const dx = (ship.x + ship.width / 2) - moon.x;
+          const dy = (ship.y + ship.height / 2) - moon.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+
+          if (dist < moon.radius + 25) {
+            gamePhase = 'moon';
+            moonTimer = MOON_TIME_LIMIT;
+            phaseEl.textContent = 'Phase: Moon Battle!';
+            instructionsEl.textContent = 'Defeat aliens before the moon explodes! Arrow Keys/WASD + SPACE to shoot';
+            stas.y = canvas.height - 100 - stas.height;
+            stas.x = 100;
+            stas.health = Math.min(stas.health + 30, stas.maxHealth);
+            bullets = [];
+            healthPacks = [];
+            for (let i = 0; i < 3; i++) {
+              setTimeout(() => spawnAlien(), i * 800);
+            }
+          }
+        }
+      }
+
+      // Moon phase controls with physics
+      if (gamePhase === 'moon') {
+        const groundY = canvas.height - 100 - stas.height;
+
+        if (keys['ArrowLeft'] || keys['KeyA']) {
+          stas.vx -= stas.speed;
+          stas.direction = -1;
+        }
+        if (keys['ArrowRight'] || keys['KeyD']) {
+          stas.vx += stas.speed;
+          stas.direction = 1;
+        }
+        if ((keys['ArrowUp'] || keys['KeyW']) && !stas.jumping) {
+          stas.jumping = true;
+          stas.velocityY = -16;
+        }
+        if (keys['Space']) shoot();
+
+        // Apply friction
+        stas.vx *= stas.friction;
+
+        // Limit speed
+        if (Math.abs(stas.vx) > stas.maxSpeed) {
+          stas.vx = stas.maxSpeed * Math.sign(stas.vx);
+        }
+
+        // Update walk animation
+        if (Math.abs(stas.vx) > 0.5) {
+          stas.walkFrame++;
+        }
+
+        // Gravity (lower on moon!)
+        stas.velocityY += 0.6;
+        stas.y += stas.velocityY;
+        stas.x += stas.vx;
+
+        if (stas.y >= groundY) {
+          stas.y = groundY;
+          stas.jumping = false;
+          stas.velocityY = 0;
+        }
+
+        stas.x = Math.max(0, Math.min(canvas.width - stas.width, stas.x));
+
+        // Update invincibility
+        if (stas.invincible > 0) stas.invincible--;
+      }
+
+      // Update bullets
+      bullets = bullets.filter(b => {
+        b.x += b.vx;
+        b.y += b.vy;
+        b.life--;
+        return b.x > 0 && b.x < canvas.width && b.life > 0;
+      });
+
+      // Update comet trails
+      cometTrails = cometTrails.filter(t => {
+        t.life--;
+        t.x += 1;
+        return t.life > 0;
+      });
+
+      // Update comets
+      comets = comets.filter(comet => {
+        comet.x += comet.vx;
+        comet.y += comet.vy;
+        comet.rotation += comet.rotationSpeed;
+
+        // Bullet collision
+        for (let i = bullets.length - 1; i >= 0; i--) {
+          const b = bullets[i];
+          const dx = b.x - comet.x;
+          const dy = b.y - comet.y;
+          if (Math.sqrt(dx * dx + dy * dy) < comet.radius + 5) {
+            if (comet.indestructible) {
+              // Bullets bounce off indestructible asteroids
+              createSparks(b.x, b.y);
+              bullets.splice(i, 1);
+            } else {
+              createExplosion(comet.x, comet.y, comet.type === 'ice' ? '#8df' : '#fa0');
+              bullets.splice(i, 1);
+              score += 15;
+              scoreEl.textContent = `Score: ${score}`;
+              addScreenShake(5);
+              return false;
+            }
+          }
+        }
+
+        // Ship collision
+        if (gamePhase === 'space' || gamePhase === 'landing') {
+          const dx = (ship.x + ship.width / 2) - comet.x;
+          const dy = (ship.y + ship.height / 2) - comet.y;
+          if (Math.sqrt(dx * dx + dy * dy) < comet.radius + 20) {
+            ship.health -= 25;
+            createExplosion(comet.x, comet.y);
+            createSparks(ship.x + ship.width / 2, ship.y + ship.height / 2);
+            addScreenShake(15);
+            if (ship.health <= 0) {
+              createExplosion(ship.x + ship.width / 2, ship.y + ship.height / 2, '#4af', 40, 12);
+              gameOver = true;
+            }
+            return false;
+          }
+        }
+
+        return comet.x > -80;
+      });
+
+      // Update health packs
+      healthPacks = healthPacks.filter(pack => {
+        pack.x += pack.vx;
+        pack.rotation += 0.02;
+        pack.pulse += 0.1;
+
+        // Collection
+        if (gamePhase === 'space' || gamePhase === 'landing') {
+          const dx = (ship.x + ship.width / 2) - pack.x;
+          const dy = (ship.y + ship.height / 2) - pack.y;
+          if (Math.sqrt(dx * dx + dy * dy) < pack.size + 25) {
+            ship.health = Math.min(ship.health + 35, ship.maxHealth);
+            createExplosion(pack.x, pack.y, '#0f0', 10, 4);
+            score += 5;
+            scoreEl.textContent = `Score: ${score}`;
+            return false;
+          }
+        } else if (gamePhase === 'moon') {
+          if (pack.x < stas.x + stas.width && pack.x + pack.size > stas.x &&
+            pack.y - pack.size < stas.y + stas.height && pack.y + pack.size > stas.y) {
+            stas.health = Math.min(stas.health + 35, stas.maxHealth);
+            createExplosion(pack.x, pack.y, '#0f0', 10, 4);
+            score += 5;
+            scoreEl.textContent = `Score: ${score}`;
+            return false;
+          }
+        }
+
+        return pack.x > -50;
+      });
+
+      // Update aliens
+      aliens = aliens.filter(alien => {
+        // Movement towards Staš
+        const targetX = stas.x - 100;
+        if (alien.x > targetX) {
+          alien.vx = -alien.speed;
+        } else if (alien.x < targetX - 50) {
+          alien.vx = alien.speed * 0.5;
+        } else {
+          alien.vx = 0;
+        }
+        alien.x += alien.vx;
+        alien.frame++;
+
+        if (alien.hit > 0) alien.hit--;
+
+        // Alien shooting
+        if (alien.type === 'shooter') {
+          alien.shootTimer--;
+          if (alien.shootTimer <= 0 && gamePhase === 'moon') {
+            alienBullets.push({
+              x: alien.x - 5,
+              y: alien.y + 27,
+              vx: -6,
+              vy: (Math.random() - 0.5) * 2,
+              width: 10,
+              height: 5
+            });
+            alien.shootTimer = 80 + Math.random() * 40;
+          }
+        }
+
+        // Bullet collision
+        for (let i = bullets.length - 1; i >= 0; i--) {
+          const b = bullets[i];
+          if (b.x > alien.x && b.x < alien.x + alien.width &&
+            b.y > alien.y && b.y < alien.y + alien.height) {
+            alien.health -= 20;
+            alien.hit = 5;
+            createSparks(b.x, b.y);
+            bullets.splice(i, 1);
+            if (alien.health <= 0) {
+              createExplosion(alien.x + alien.width / 2, alien.y + alien.height / 2, '#0f0', 25, 10);
+              score += alien.type === 'shooter' ? 35 : 25;
+              scoreEl.textContent = `Score: ${score}`;
+              addScreenShake(8);
+              return false;
+            }
+          }
+        }
+
+        // Staš collision (melee damage)
+        if (stas.invincible === 0 &&
+          alien.x < stas.x + stas.width && alien.x + alien.width > stas.x &&
+          alien.y < stas.y + stas.height && alien.y + alien.height > stas.y) {
+          stas.health -= 15;
+          stas.invincible = 60;
+          stas.vx = 8 * (stas.x < alien.x ? -1 : 1);
+          addScreenShake(10);
+          if (stas.health <= 0) {
+            createExplosion(stas.x + stas.width / 2, stas.y + stas.height / 2, '#f44', 30, 8);
+            gameOver = true;
+          }
+        }
+
+        return alien.x > -60;
+      });
+
+      // Update alien bullets
+      alienBullets = alienBullets.filter(b => {
+        b.x += b.vx;
+        b.y += b.vy;
+
+        // Hit Staš
+        if (stas.invincible === 0 &&
+          b.x > stas.x && b.x < stas.x + stas.width &&
+          b.y > stas.y && b.y < stas.y + stas.height) {
+          stas.health -= 12;
+          stas.invincible = 30;
+          createSparks(b.x, b.y);
+          addScreenShake(5);
+          if (stas.health <= 0) {
+            createExplosion(stas.x + stas.width / 2, stas.y + stas.height / 2, '#f44', 30, 8);
+            gameOver = true;
+          }
+          return false;
+        }
+
+        return b.x > 0;
+      });
+
+      // Update particles
+      particles = particles.filter(p => {
+        p.x += p.vx;
+        p.y += p.vy;
+
+        if (p.type === 'explosion') {
+          p.vx *= 0.95;
+          p.vy *= 0.95;
+        } else if (p.type === 'smoke') {
+          p.vx *= 0.98;
+          p.vy -= 0.05;
+          p.size += 0.3;
+        }
+
+        p.life--;
+        return p.life > 0;
+      });
+
+      // Update muzzle flashes
+      muzzleFlashes = muzzleFlashes.filter(f => {
+        f.life--;
+        return f.life > 0;
+      });
+
+      // Phase transitions
+      if (gamePhase === 'space' && score >= 100) {
+        gamePhase = 'landing';
+        phaseEl.textContent = 'Phase: Land on Moon!';
+      }
+
+      // Victory condition
+      if (gamePhase === 'moon' && score >= 350) {
+        victory = true;
+      }
+
+      // Moon timer and explosion
+      if (gamePhase === 'moon' && !victory && !gameOver) {
+        moonTimer -= 1 / 60; // Decrease by 1 second per 60 frames
+
+        // Screen shake warning when time is low
+        if (moonTimer <= 10 && moonTimer > 0) {
+          if (Math.random() > 0.7) addScreenShake(3 + (10 - moonTimer) * 0.5);
+        }
+
+        // Moon explodes when timer reaches 0
+        if (moonTimer <= 0 && !moonExploding) {
+          moonExploding = true;
+          gameOver = true;
+          addScreenShake(30);
+
+          // Create massive explosion
+          for (let i = 0; i < 100; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const speed = Math.random() * 15 + 5;
+            moonExplosionParticles.push({
+              x: canvas.width / 2,
+              y: canvas.height / 2,
+              vx: Math.cos(angle) * speed,
+              vy: Math.sin(angle) * speed,
+              size: Math.random() * 30 + 10,
+              life: 120,
+              maxLife: 120,
+              color: ['#f80', '#ff0', '#f00', '#fa0', '#fff'][Math.floor(Math.random() * 5)]
+            });
+          }
+          // Add debris
+          for (let i = 0; i < 50; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const speed = Math.random() * 8 + 2;
+            moonExplosionParticles.push({
+              x: canvas.width / 2 + (Math.random() - 0.5) * 200,
+              y: canvas.height / 2 + (Math.random() - 0.5) * 200,
+              vx: Math.cos(angle) * speed,
+              vy: Math.sin(angle) * speed,
+              size: Math.random() * 20 + 5,
+              life: 150,
+              maxLife: 150,
+              color: '#555',
+              type: 'debris'
+            });
+          }
+        }
+      }
+
+      // Update moon explosion particles
+      moonExplosionParticles = moonExplosionParticles.filter(p => {
+        p.x += p.vx;
+        p.y += p.vy;
+        p.vy += 0.1; // Gravity
+        p.life--;
+        return p.life > 0;
+      });
+    }
+
+    function draw() {
+      ctx.save();
+      ctx.translate(screenShakeX, screenShakeY);
+
+      ctx.clearRect(-10, -10, canvas.width + 20, canvas.height + 20);
+
+      if (gamePhase === 'moon') {
+        drawMoonSurface();
+      } else {
+        // Space background
+        const bgGrad = ctx.createRadialGradient(canvas.width / 2, canvas.height / 2, 0, canvas.width / 2, canvas.height / 2, canvas.width);
+        bgGrad.addColorStop(0, '#0a0a20');
+        bgGrad.addColorStop(1, '#000008');
+        ctx.fillStyle = bgGrad;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // Nebulae
+        nebulae.forEach(nebula => {
+          const nebGrad = ctx.createRadialGradient(nebula.x, nebula.y, 0, nebula.x, nebula.y, nebula.radius);
+          nebGrad.addColorStop(0, nebula.color);
+          nebGrad.addColorStop(1, 'rgba(0,0,0,0)');
+          ctx.fillStyle = nebGrad;
+          ctx.beginPath();
+          ctx.arc(nebula.x, nebula.y, nebula.radius, 0, Math.PI * 2);
+          ctx.fill();
+        });
+      }
+
+      // Parallax stars
+      starLayers.forEach(layer => {
+        layer.stars.forEach(star => {
+          const twinkle = Math.sin(star.twinkle) * 0.3 + 0.7;
+          ctx.globalAlpha = star.brightness * twinkle;
+          ctx.fillStyle = star.color;
+          ctx.beginPath();
+          ctx.arc(star.x, star.y, layer.size, 0, Math.PI * 2);
+          ctx.fill();
+        });
+      });
+      ctx.globalAlpha = 1;
+
+      // Draw comet trails
+      cometTrails.forEach(trail => {
+        ctx.globalAlpha = trail.life / trail.maxLife * 0.5;
+        ctx.fillStyle = trail.color;
+        ctx.beginPath();
+        ctx.arc(trail.x, trail.y, trail.size * (trail.life / trail.maxLife), 0, Math.PI * 2);
+        ctx.fill();
+      });
+      ctx.globalAlpha = 1;
+
+      if (gamePhase !== 'moon') {
+        drawMoon();
+        comets.forEach(drawComet);
+        healthPacks.forEach(drawHealthPack);
+        drawShip(ship.x, ship.y);
+
+        // UI
+        drawHealthBar(15, 15, ship.health, ship.maxHealth, 120, 12);
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold 14px Courier New';
+        ctx.fillText('SHIP', 15, 42);
+      } else {
+        healthPacks.forEach(drawHealthPack);
+        aliens.forEach(alien => {
+          drawAlien(alien);
+          drawHealthBar(alien.x, alien.y - 12, alien.health, alien.maxHealth, 40, 6);
+        });
+
+        // Alien bullets
+        alienBullets.forEach(b => {
+          const bulletGrad = ctx.createLinearGradient(b.x - b.width, b.y, b.x, b.y);
+          bulletGrad.addColorStop(0, 'rgba(255,0,0,0)');
+          bulletGrad.addColorStop(1, '#f00');
+          ctx.fillStyle = bulletGrad;
+          ctx.beginPath();
+          ctx.ellipse(b.x, b.y + b.height / 2, b.width, b.height / 2, 0, 0, Math.PI * 2);
+          ctx.fill();
+
+          // Glow
+          ctx.fillStyle = 'rgba(255,0,0,0.3)';
+          ctx.beginPath();
+          ctx.arc(b.x, b.y + b.height / 2, b.width, 0, Math.PI * 2);
+          ctx.fill();
+        });
+
+        drawStas(stas.x, stas.y);
+
+        // UI
+        drawHealthBar(15, 15, stas.health, stas.maxHealth, 120, 12);
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold 14px Courier New';
+        ctx.fillText('STAŠ', 15, 42);
+
+        // Timer display
+        if (!moonExploding) {
+          const timeLeft = Math.max(0, Math.ceil(moonTimer));
+          const timerColor = timeLeft <= 10 ? (Math.floor(Date.now() / 200) % 2 === 0 ? '#f00' : '#ff0') : '#fff';
+
+          // Timer background
+          ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+          ctx.fillRect(canvas.width / 2 - 60, 10, 120, 40);
+
+          // Timer text
+          ctx.fillStyle = timerColor;
+          ctx.font = 'bold 28px Courier New';
+          ctx.textAlign = 'center';
+          ctx.fillText(timeLeft + 's', canvas.width / 2, 40);
+
+          // Warning text
+          if (timeLeft <= 15) {
+            ctx.fillStyle = '#f00';
+            ctx.font = 'bold 16px Courier New';
+            ctx.fillText('MOON UNSTABLE!', canvas.width / 2, 62);
+          }
+          ctx.textAlign = 'left';
+
+          // Timer bar
+          const barWidth = 200;
+          const barX = canvas.width / 2 - barWidth / 2;
+          ctx.fillStyle = '#300';
+          ctx.fillRect(barX, 70, barWidth, 8);
+          const timerPercent = moonTimer / MOON_TIME_LIMIT;
+          const barGrad = ctx.createLinearGradient(barX, 0, barX + barWidth, 0);
+          barGrad.addColorStop(0, '#f00');
+          barGrad.addColorStop(0.5, '#ff0');
+          barGrad.addColorStop(1, '#0f0');
+          ctx.fillStyle = timerPercent <= 0.25 ? '#f00' : (timerPercent <= 0.5 ? '#ff0' : '#0f0');
+          ctx.fillRect(barX, 70, barWidth * timerPercent, 8);
+        }
+      }
+
+      // Draw player bullets
+      bullets.forEach(b => {
+        if (b.type === 'laser') {
+          const bulletGrad = ctx.createLinearGradient(b.x - b.width, b.y, b.x, b.y);
+          bulletGrad.addColorStop(0, 'rgba(255,255,0,0)');
+          bulletGrad.addColorStop(0.5, '#ff0');
+          bulletGrad.addColorStop(1, '#fff');
+          ctx.fillStyle = bulletGrad;
+          ctx.fillRect(b.x - b.width, b.y - b.height / 2, b.width, b.height);
+
+          // Glow
+          ctx.fillStyle = 'rgba(255,255,0,0.3)';
+          ctx.beginPath();
+          ctx.ellipse(b.x - b.width / 2, b.y, b.width / 2 + 5, b.height + 3, 0, 0, Math.PI * 2);
+          ctx.fill();
+        } else {
+          const bulletGrad = ctx.createLinearGradient(b.x - b.width, b.y, b.x, b.y);
+          bulletGrad.addColorStop(0, 'rgba(0,255,255,0)');
+          bulletGrad.addColorStop(1, '#0ff');
+          ctx.fillStyle = bulletGrad;
+          ctx.fillRect(b.x - b.width, b.y - b.height / 2, b.width, b.height);
+        }
+      });
+
+      // Draw muzzle flashes
+      muzzleFlashes.forEach(drawMuzzleFlash);
+
+      // Draw particles
+      particles.forEach(p => {
+        ctx.globalAlpha = p.life / p.maxLife;
+        ctx.fillStyle = p.color;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+        ctx.fill();
+      });
+      ctx.globalAlpha = 1;
+
+      ctx.restore();
+
+      // Draw moon explosion particles
+      moonExplosionParticles.forEach(p => {
+        ctx.globalAlpha = p.life / p.maxLife;
+        if (p.type === 'debris') {
+          ctx.fillStyle = p.color;
+          ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size * 0.7);
+        } else {
+          const grad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.size);
+          grad.addColorStop(0, '#fff');
+          grad.addColorStop(0.3, p.color);
+          grad.addColorStop(1, 'rgba(0,0,0,0)');
+          ctx.fillStyle = grad;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      });
+      ctx.globalAlpha = 1;
+
+      // Game over screen
+      if (gameOver) {
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        ctx.fillStyle = '#f00';
+        ctx.font = 'bold 56px Courier New';
+        ctx.textAlign = 'center';
+
+        if (moonExploding) {
+          ctx.fillText('MOON EXPLODED!', canvas.width / 2, canvas.height / 2 - 40);
+          ctx.fillStyle = '#f80';
+          ctx.font = '24px Courier New';
+          ctx.fillText('Staš was too slow...', canvas.width / 2, canvas.height / 2);
+        } else {
+          ctx.fillText('GAME OVER', canvas.width / 2, canvas.height / 2 - 20);
+        }
+
+        ctx.fillStyle = '#fff';
+        ctx.font = '24px Courier New';
+        ctx.fillText(`Final Score: ${score}`, canvas.width / 2, canvas.height / 2 + 40);
+        ctx.fillStyle = '#888';
+        ctx.font = '18px Courier New';
+        ctx.fillText('Press R to restart', canvas.width / 2, canvas.height / 2 + 80);
+        ctx.textAlign = 'left';
+      }
+
+      // Victory screen
+      if (victory) {
+        ctx.fillStyle = 'rgba(0, 30, 0, 0.85)';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // Fireworks effect
+        for (let i = 0; i < 5; i++) {
+          const fx = 150 + i * 150;
+          const fy = 100 + Math.sin(Date.now() * 0.003 + i) * 30;
+          const frad = 30 + Math.sin(Date.now() * 0.01 + i * 2) * 10;
+          const fgrad = ctx.createRadialGradient(fx, fy, 0, fx, fy, frad);
+          fgrad.addColorStop(0, `hsla(${(Date.now() * 0.1 + i * 60) % 360}, 100%, 70%, 0.8)`);
+          fgrad.addColorStop(1, 'rgba(0,0,0,0)');
+          ctx.fillStyle = fgrad;
+          ctx.beginPath();
+          ctx.arc(fx, fy, frad, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        ctx.fillStyle = '#0f0';
+        ctx.font = 'bold 60px Courier New';
+        ctx.textAlign = 'center';
+        ctx.fillText('STAŠ WINS!', canvas.width / 2, canvas.height / 2 - 40);
+
+        ctx.fillStyle = '#ff0';
+        ctx.font = 'bold 32px Courier New';
+        ctx.fillText('★ HERO OF THE MOON ★', canvas.width / 2, canvas.height / 2 + 10);
+
+        ctx.fillStyle = '#fff';
+        ctx.font = '24px Courier New';
+        ctx.fillText(`Final Score: ${score}`, canvas.width / 2, canvas.height / 2 + 55);
+        ctx.fillStyle = '#888';
+        ctx.font = '18px Courier New';
+        ctx.fillText('Press R to play again', canvas.width / 2, canvas.height / 2 + 95);
+        ctx.textAlign = 'left';
+      }
+    }
+
+    function restart() {
+      gamePhase = 'space';
+      score = 0;
+      gameOver = false;
+      victory = false;
+      screenShake = 0;
+      moonTimer = MOON_TIME_LIMIT;
+      moonExploding = false;
+      moonExplosionParticles = [];
+      ship.x = 100;
+      ship.y = canvas.height / 2;
+      ship.vx = 0;
+      ship.vy = 0;
+      ship.health = ship.maxHealth;
+      ship.angle = 0;
+      stas.health = stas.maxHealth;
+      stas.x = 100;
+      stas.vx = 0;
+      stas.invincible = 0;
+      bullets = [];
+      comets = [];
+      aliens = [];
+      alienBullets = [];
+      particles = [];
+      healthPacks = [];
+      cometTrails = [];
+      muzzleFlashes = [];
+      scoreEl.textContent = 'Score: 0';
+      phaseEl.textContent = 'Phase: Space Flight';
+      instructionsEl.textContent = 'Arrow Keys / WASD to move | SPACE to shoot | Land on the Moon!';
+    }
+
+    document.addEventListener('keydown', e => {
+      if (e.code === 'KeyR' && (gameOver || victory)) {
+        restart();
+      }
+    });
+
+    // Spawn timers
+    setInterval(() => {
+      if (gamePhase === 'space') spawnComet();
+    }, 700);
+
+    setInterval(() => {
+      if (gamePhase === 'moon' && aliens.length < 6) spawnAlien();
+    }, 1800);
+
+    // Health pack spawning
+    setInterval(() => {
+      if ((gamePhase === 'space' || gamePhase === 'landing') && Math.random() > 0.5) {
+        spawnHealthPack();
+      }
+    }, 5000);
+
+    setInterval(() => {
+      if (gamePhase === 'moon' && Math.random() > 0.4) {
+        spawnHealthPack();
+      }
+    }, 8000);
+
+    // Game loop
+    function gameLoop() {
+      update();
+      draw();
+      requestAnimationFrame(gameLoop);
+    }
+
+    gameLoop();
+  </script>
+</body>
+
+</html>

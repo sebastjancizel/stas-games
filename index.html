@@ -1,0 +1,759 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Staš's Game World</title>
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --grass-green: #5D9B37;
+            --grass-light: #7DBB4C;
+            --dirt-brown: #8B5A2B;
+            --dirt-dark: #6B4423;
+            --stone-gray: #7F7F7F;
+            --sky-blue: #87CEEB;
+            --sky-top: #4A90C2;
+            --creeper-green: #4AAD4A;
+            --gold: #FFD700;
+            --diamond: #4AEDD9;
+            --redstone: #FF3333;
+            --white: #FFFFFF;
+            --black: #1A1A1A;
+        }
+
+        html, body {
+            min-height: 100vh;
+            font-family: 'Press Start 2P', monospace;
+            image-rendering: pixelated;
+            overflow-x: hidden;
+        }
+
+        body {
+            background: linear-gradient(180deg, var(--sky-top) 0%, var(--sky-blue) 50%, var(--sky-blue) 100%);
+            position: relative;
+        }
+
+        /* Pixelated clouds */
+        .clouds {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 200px;
+            pointer-events: none;
+            z-index: 1;
+            overflow: hidden;
+        }
+
+        .cloud {
+            position: absolute;
+            background: rgba(255, 255, 255, 0.9);
+            box-shadow:
+                20px 0 0 rgba(255, 255, 255, 0.9),
+                40px 0 0 rgba(255, 255, 255, 0.9),
+                10px -20px 0 rgba(255, 255, 255, 0.9),
+                30px -20px 0 rgba(255, 255, 255, 0.9),
+                20px -40px 0 rgba(255, 255, 255, 0.9);
+            width: 20px;
+            height: 20px;
+            animation: float-cloud linear infinite;
+        }
+
+        .cloud:nth-child(1) { top: 40px; left: -100px; animation-duration: 35s; }
+        .cloud:nth-child(2) { top: 80px; left: -200px; animation-duration: 45s; animation-delay: -10s; }
+        .cloud:nth-child(3) { top: 30px; left: -150px; animation-duration: 40s; animation-delay: -20s; }
+        .cloud:nth-child(4) { top: 100px; left: -50px; animation-duration: 50s; animation-delay: -5s; }
+
+        @keyframes float-cloud {
+            from { transform: translateX(0); }
+            to { transform: translateX(calc(100vw + 200px)); }
+        }
+
+        /* Floating blocks decoration */
+        .floating-blocks {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 0;
+            overflow: hidden;
+        }
+
+        .block {
+            position: absolute;
+            width: 40px;
+            height: 40px;
+            animation: float-block 4s ease-in-out infinite;
+        }
+
+        .block.grass {
+            background: linear-gradient(180deg, var(--grass-green) 0%, var(--grass-green) 25%, var(--dirt-brown) 25%, var(--dirt-brown) 100%);
+            box-shadow: inset 2px 2px 0 rgba(255,255,255,0.2), inset -2px -2px 0 rgba(0,0,0,0.2);
+        }
+
+        .block.dirt {
+            background: var(--dirt-brown);
+            box-shadow: inset 2px 2px 0 rgba(255,255,255,0.15), inset -2px -2px 0 rgba(0,0,0,0.2);
+        }
+
+        .block.stone {
+            background: var(--stone-gray);
+            box-shadow: inset 2px 2px 0 rgba(255,255,255,0.2), inset -2px -2px 0 rgba(0,0,0,0.3);
+        }
+
+        .block.diamond {
+            background: var(--diamond);
+            box-shadow: inset 2px 2px 0 rgba(255,255,255,0.4), inset -2px -2px 0 rgba(0,0,0,0.2), 0 0 20px rgba(74, 237, 217, 0.5);
+        }
+
+        .block.gold {
+            background: var(--gold);
+            box-shadow: inset 2px 2px 0 rgba(255,255,255,0.4), inset -2px -2px 0 rgba(0,0,0,0.2), 0 0 15px rgba(255, 215, 0, 0.4);
+        }
+
+        .block:nth-child(1) { top: 15%; left: 5%; animation-delay: 0s; }
+        .block:nth-child(2) { top: 25%; right: 8%; animation-delay: 0.5s; }
+        .block:nth-child(3) { top: 60%; left: 3%; animation-delay: 1s; }
+        .block:nth-child(4) { top: 70%; right: 5%; animation-delay: 1.5s; }
+        .block:nth-child(5) { top: 40%; left: 8%; animation-delay: 2s; }
+        .block:nth-child(6) { top: 50%; right: 10%; animation-delay: 2.5s; }
+        .block:nth-child(7) { top: 85%; left: 10%; animation-delay: 3s; }
+        .block:nth-child(8) { top: 20%; right: 15%; animation-delay: 3.5s; }
+
+        @keyframes float-block {
+            0%, 100% { transform: translateY(0) rotate(0deg); }
+            50% { transform: translateY(-15px) rotate(3deg); }
+        }
+
+        /* Main content */
+        .container {
+            position: relative;
+            z-index: 10;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 40px 20px;
+        }
+
+        /* Creeper decoration */
+        .creeper {
+            width: 60px;
+            height: 60px;
+            background: var(--creeper-green);
+            position: relative;
+            margin-bottom: 20px;
+            animation: creeper-bounce 2s ease-in-out infinite;
+            box-shadow: inset 3px 3px 0 rgba(255,255,255,0.2), inset -3px -3px 0 rgba(0,0,0,0.2);
+        }
+
+        .creeper::before {
+            content: '';
+            position: absolute;
+            top: 15px;
+            left: 10px;
+            width: 12px;
+            height: 12px;
+            background: var(--black);
+            box-shadow: 28px 0 0 var(--black);
+        }
+
+        .creeper::after {
+            content: '';
+            position: absolute;
+            top: 30px;
+            left: 18px;
+            width: 8px;
+            height: 6px;
+            background: var(--black);
+            box-shadow:
+                8px 0 0 var(--black),
+                0px 6px 0 var(--black),
+                8px 6px 0 var(--black),
+                -4px 6px 0 var(--black),
+                12px 6px 0 var(--black),
+                -4px 12px 0 var(--black),
+                12px 12px 0 var(--black);
+        }
+
+        @keyframes creeper-bounce {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+        }
+
+        /* Title */
+        .title-container {
+            text-align: center;
+            margin-bottom: 60px;
+        }
+
+        .title {
+            font-size: clamp(1.5rem, 5vw, 3rem);
+            color: var(--white);
+            text-shadow:
+                4px 4px 0 var(--black),
+                -2px -2px 0 var(--black),
+                2px -2px 0 var(--black),
+                -2px 2px 0 var(--black),
+                0 6px 0 rgba(0,0,0,0.3);
+            letter-spacing: 2px;
+            animation: title-glow 3s ease-in-out infinite;
+        }
+
+        .title .name {
+            color: var(--gold);
+            text-shadow:
+                4px 4px 0 var(--black),
+                -2px -2px 0 var(--black),
+                2px -2px 0 var(--black),
+                -2px 2px 0 var(--black),
+                0 0 30px rgba(255, 215, 0, 0.5);
+        }
+
+        @keyframes title-glow {
+            0%, 100% { filter: brightness(1); }
+            50% { filter: brightness(1.1); }
+        }
+
+        .subtitle {
+            font-size: clamp(0.5rem, 2vw, 0.8rem);
+            color: var(--white);
+            text-shadow: 2px 2px 0 var(--black);
+            margin-top: 15px;
+            opacity: 0.9;
+        }
+
+        /* Game cards container */
+        .games-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 40px;
+            justify-content: center;
+            max-width: 900px;
+            width: 100%;
+        }
+
+        /* Game card */
+        .game-card {
+            width: 320px;
+            background: var(--dirt-brown);
+            border: 4px solid var(--dirt-dark);
+            position: relative;
+            text-decoration: none;
+            transition: transform 0.2s ease;
+            cursor: pointer;
+        }
+
+        .game-card:hover {
+            transform: translateY(-10px) scale(1.02);
+        }
+
+        .game-card:active {
+            transform: translateY(-5px) scale(0.98);
+        }
+
+        /* Grass top for cards */
+        .game-card::before {
+            content: '';
+            position: absolute;
+            top: -20px;
+            left: -4px;
+            right: -4px;
+            height: 24px;
+            background:
+                repeating-linear-gradient(
+                    90deg,
+                    var(--grass-green) 0px,
+                    var(--grass-green) 8px,
+                    var(--grass-light) 8px,
+                    var(--grass-light) 16px
+                );
+            border: 4px solid var(--dirt-dark);
+            border-bottom: none;
+            box-shadow: inset 0 -4px 0 rgba(0,0,0,0.2);
+        }
+
+        .game-card::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: repeating-linear-gradient(
+                90deg,
+                var(--grass-green) 0px,
+                var(--grass-light) 4px,
+                var(--dirt-brown) 8px
+            );
+        }
+
+        .card-content {
+            padding: 30px 20px 20px;
+        }
+
+        /* Game icon area */
+        .game-icon {
+            width: 100%;
+            height: 140px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 20px;
+            background: rgba(0,0,0,0.2);
+            border: 3px solid rgba(0,0,0,0.3);
+            position: relative;
+            overflow: hidden;
+        }
+
+        /* Plane game icon */
+        .plane-icon {
+            position: relative;
+            width: 100px;
+            height: 40px;
+        }
+
+        .plane-body {
+            position: absolute;
+            width: 80px;
+            height: 24px;
+            background: linear-gradient(180deg, #CCC 0%, #999 100%);
+            left: 10px;
+            top: 8px;
+            clip-path: polygon(0 50%, 15% 0, 85% 0, 100% 30%, 100% 70%, 85% 100%, 15% 100%);
+        }
+
+        .plane-wing {
+            position: absolute;
+            width: 40px;
+            height: 12px;
+            background: linear-gradient(180deg, #AAA 0%, #777 100%);
+            left: 30px;
+            top: 14px;
+            transform: skewX(-20deg);
+        }
+
+        .plane-tail {
+            position: absolute;
+            width: 16px;
+            height: 20px;
+            background: linear-gradient(90deg, #999 0%, #BBB 100%);
+            left: 8px;
+            top: 0;
+            clip-path: polygon(100% 100%, 100% 0, 0 0);
+        }
+
+        .plane-cockpit {
+            position: absolute;
+            width: 16px;
+            height: 10px;
+            background: var(--diamond);
+            left: 65px;
+            top: 15px;
+            border-radius: 50%;
+            box-shadow: inset 2px 2px 0 rgba(255,255,255,0.5);
+        }
+
+        /* Stars around plane */
+        .star {
+            position: absolute;
+            width: 8px;
+            height: 8px;
+            background: var(--gold);
+            clip-path: polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%);
+            animation: star-twinkle 1s ease-in-out infinite;
+        }
+
+        .star:nth-child(2) { top: 20px; left: 30px; animation-delay: 0.2s; }
+        .star:nth-child(3) { top: 100px; right: 40px; animation-delay: 0.4s; }
+        .star:nth-child(4) { top: 40px; right: 30px; animation-delay: 0.6s; }
+        .star:nth-child(5) { bottom: 30px; left: 50px; animation-delay: 0.8s; }
+
+        @keyframes star-twinkle {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.5; transform: scale(0.8); }
+        }
+
+        /* Space game icon */
+        .space-icon {
+            position: relative;
+            width: 100%;
+            height: 100%;
+        }
+
+        .rocket {
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            animation: rocket-hover 2s ease-in-out infinite;
+        }
+
+        .rocket-body {
+            width: 24px;
+            height: 50px;
+            background: linear-gradient(90deg, #EEE 0%, #CCC 50%, #AAA 100%);
+            border-radius: 12px 12px 4px 4px;
+            position: relative;
+        }
+
+        .rocket-nose {
+            position: absolute;
+            top: -15px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 0;
+            height: 0;
+            border-left: 12px solid transparent;
+            border-right: 12px solid transparent;
+            border-bottom: 20px solid var(--redstone);
+        }
+
+        .rocket-window {
+            position: absolute;
+            top: 12px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 12px;
+            height: 12px;
+            background: var(--diamond);
+            border-radius: 50%;
+            box-shadow: inset 2px 2px 0 rgba(255,255,255,0.6);
+        }
+
+        .rocket-fin-left, .rocket-fin-right {
+            position: absolute;
+            bottom: 0;
+            width: 0;
+            height: 0;
+            border-top: 15px solid transparent;
+            border-bottom: 10px solid var(--redstone);
+        }
+
+        .rocket-fin-left {
+            left: -10px;
+            border-right: 12px solid var(--redstone);
+        }
+
+        .rocket-fin-right {
+            right: -10px;
+            border-left: 12px solid var(--redstone);
+        }
+
+        .rocket-flame {
+            position: absolute;
+            bottom: -25px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 16px;
+            height: 25px;
+            background: linear-gradient(180deg, var(--gold) 0%, #FF6600 50%, var(--redstone) 100%);
+            clip-path: polygon(50% 100%, 0 0, 100% 0);
+            animation: flame-flicker 0.2s ease-in-out infinite;
+        }
+
+        @keyframes rocket-hover {
+            0%, 100% { transform: translate(-50%, -50%); }
+            50% { transform: translate(-50%, calc(-50% - 8px)); }
+        }
+
+        @keyframes flame-flicker {
+            0%, 100% { opacity: 1; height: 25px; }
+            50% { opacity: 0.8; height: 20px; }
+        }
+
+        /* Planet decorations */
+        .planet {
+            position: absolute;
+            border-radius: 50%;
+        }
+
+        .planet.moon {
+            width: 30px;
+            height: 30px;
+            background: radial-gradient(circle at 30% 30%, #EEE, #AAA);
+            top: 15px;
+            right: 25px;
+            box-shadow: inset -5px -5px 10px rgba(0,0,0,0.3);
+        }
+
+        .planet.moon::before {
+            content: '';
+            position: absolute;
+            width: 6px;
+            height: 6px;
+            background: rgba(0,0,0,0.2);
+            border-radius: 50%;
+            top: 10px;
+            left: 8px;
+        }
+
+        .planet.earth {
+            width: 20px;
+            height: 20px;
+            background: radial-gradient(circle at 30% 30%, var(--diamond), #2E5B8B);
+            bottom: 20px;
+            left: 30px;
+            box-shadow: 0 0 10px rgba(74, 237, 217, 0.3);
+        }
+
+        /* Card text */
+        .game-title {
+            font-size: 0.9rem;
+            color: var(--white);
+            text-shadow: 2px 2px 0 var(--black);
+            margin-bottom: 10px;
+            text-align: center;
+            line-height: 1.6;
+        }
+
+        .game-desc {
+            font-size: 0.5rem;
+            color: var(--white);
+            text-shadow: 1px 1px 0 var(--black);
+            text-align: center;
+            line-height: 1.8;
+            opacity: 0.9;
+        }
+
+        /* Play button */
+        .play-btn {
+            display: block;
+            margin: 20px auto 0;
+            padding: 12px 30px;
+            background: linear-gradient(180deg, var(--grass-light) 0%, var(--grass-green) 100%);
+            border: 3px solid var(--dirt-dark);
+            color: var(--white);
+            font-family: 'Press Start 2P', monospace;
+            font-size: 0.7rem;
+            text-shadow: 2px 2px 0 var(--black);
+            cursor: pointer;
+            transition: all 0.1s ease;
+            box-shadow: 0 4px 0 var(--dirt-dark);
+        }
+
+        .play-btn:hover {
+            background: linear-gradient(180deg, #8ECB5C 0%, var(--grass-light) 100%);
+            transform: translateY(-2px);
+            box-shadow: 0 6px 0 var(--dirt-dark);
+        }
+
+        .play-btn:active {
+            transform: translateY(2px);
+            box-shadow: 0 2px 0 var(--dirt-dark);
+        }
+
+        /* Ground at bottom */
+        .ground {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 60px;
+            z-index: 5;
+            pointer-events: none;
+        }
+
+        .grass-layer {
+            height: 20px;
+            background: repeating-linear-gradient(
+                90deg,
+                var(--grass-green) 0px,
+                var(--grass-green) 16px,
+                var(--grass-light) 16px,
+                var(--grass-light) 32px
+            );
+            box-shadow: inset 0 -4px 0 rgba(0,0,0,0.2);
+        }
+
+        .dirt-layer {
+            height: 40px;
+            background:
+                repeating-linear-gradient(
+                    90deg,
+                    var(--dirt-brown) 0px,
+                    var(--dirt-brown) 16px,
+                    var(--dirt-dark) 16px,
+                    var(--dirt-dark) 32px
+                );
+        }
+
+        /* Pickaxe decoration */
+        .pickaxe {
+            position: fixed;
+            bottom: 70px;
+            right: 30px;
+            width: 50px;
+            height: 50px;
+            z-index: 6;
+            animation: pickaxe-swing 3s ease-in-out infinite;
+            transform-origin: bottom right;
+        }
+
+        .pickaxe-handle {
+            position: absolute;
+            width: 8px;
+            height: 45px;
+            background: linear-gradient(90deg, #8B5A2B, #6B4423);
+            bottom: 0;
+            left: 50%;
+            transform: translateX(-50%) rotate(45deg);
+            transform-origin: bottom center;
+        }
+
+        .pickaxe-head {
+            position: absolute;
+            width: 30px;
+            height: 10px;
+            background: var(--diamond);
+            top: 5px;
+            left: 50%;
+            transform: translateX(-50%) rotate(45deg);
+            box-shadow: inset 2px 2px 0 rgba(255,255,255,0.4), 0 0 15px rgba(74, 237, 217, 0.4);
+        }
+
+        @keyframes pickaxe-swing {
+            0%, 100% { transform: rotate(0deg); }
+            25% { transform: rotate(-10deg); }
+            75% { transform: rotate(10deg); }
+        }
+
+        /* Responsive */
+        @media (max-width: 700px) {
+            .games-container {
+                gap: 50px;
+            }
+
+            .game-card {
+                width: 280px;
+            }
+
+            .block {
+                width: 30px;
+                height: 30px;
+            }
+
+            .pickaxe {
+                display: none;
+            }
+
+            .ground {
+                height: 40px;
+            }
+
+            .grass-layer {
+                height: 12px;
+            }
+
+            .dirt-layer {
+                height: 28px;
+            }
+        }
+
+        /* Extra space at bottom for ground */
+        .spacer {
+            height: 100px;
+        }
+    </style>
+</head>
+<body>
+    <!-- Clouds -->
+    <div class="clouds">
+        <div class="cloud"></div>
+        <div class="cloud"></div>
+        <div class="cloud"></div>
+        <div class="cloud"></div>
+    </div>
+
+    <!-- Floating blocks -->
+    <div class="floating-blocks">
+        <div class="block grass"></div>
+        <div class="block diamond"></div>
+        <div class="block dirt"></div>
+        <div class="block gold"></div>
+        <div class="block stone"></div>
+        <div class="block grass"></div>
+        <div class="block dirt"></div>
+        <div class="block diamond"></div>
+    </div>
+
+    <!-- Main content -->
+    <div class="container">
+        <div class="title-container">
+            <div class="creeper"></div>
+            <h1 class="title"><span class="name">STAŠ'S</span><br>GAME WORLD</h1>
+            <p class="subtitle">CHOOSE YOUR ADVENTURE!</p>
+        </div>
+
+        <div class="games-container">
+            <!-- Plane Game Card -->
+            <a href="games/plane.html" class="game-card">
+                <div class="card-content">
+                    <div class="game-icon">
+                        <div class="star"></div>
+                        <div class="star"></div>
+                        <div class="star"></div>
+                        <div class="star"></div>
+                        <div class="plane-icon">
+                            <div class="plane-tail"></div>
+                            <div class="plane-wing"></div>
+                            <div class="plane-body"></div>
+                            <div class="plane-cockpit"></div>
+                        </div>
+                    </div>
+                    <h2 class="game-title">STAŠ'S PLANE</h2>
+                    <p class="game-desc">DODGE MISSILES & COLLECT STARS!</p>
+                    <button class="play-btn">PLAY!</button>
+                </div>
+            </a>
+
+            <!-- Space Game Card -->
+            <a href="games/space.html" class="game-card">
+                <div class="card-content">
+                    <div class="game-icon">
+                        <div class="planet moon"></div>
+                        <div class="planet earth"></div>
+                        <div class="space-icon">
+                            <div class="rocket">
+                                <div class="rocket-body">
+                                    <div class="rocket-nose"></div>
+                                    <div class="rocket-window"></div>
+                                    <div class="rocket-fin-left"></div>
+                                    <div class="rocket-fin-right"></div>
+                                    <div class="rocket-flame"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <h2 class="game-title">SPACE ADVENTURE</h2>
+                    <p class="game-desc">BLAST COMETS & LAND ON THE MOON!</p>
+                    <button class="play-btn">PLAY!</button>
+                </div>
+            </a>
+        </div>
+
+        <div class="spacer"></div>
+    </div>
+
+    <!-- Pickaxe decoration -->
+    <div class="pickaxe">
+        <div class="pickaxe-head"></div>
+        <div class="pickaxe-handle"></div>
+    </div>
+
+    <!-- Ground -->
+    <div class="ground">
+        <div class="grass-layer"></div>
+        <div class="dirt-layer"></div>
+    </div>
+</body>
+</html>
