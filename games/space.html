@@ -73,16 +73,130 @@
       font-size: 14px;
       text-align: center;
     }
+
+    #levelSelect {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: radial-gradient(ellipse at center, #0a0a20 0%, #000008 100%);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+    }
+
+    #levelSelect h1 {
+      color: #0f0;
+      font-size: 36px;
+      text-shadow: 0 0 20px #0f0, 0 0 40px #0f0;
+      margin-bottom: 10px;
+    }
+
+    #levelSelect .subtitle {
+      color: #888;
+      font-size: 14px;
+      margin-bottom: 40px;
+    }
+
+    .level-btn {
+      width: 280px;
+      padding: 20px;
+      margin: 10px;
+      background: rgba(0, 255, 0, 0.05);
+      border: 2px solid #0a0;
+      border-radius: 10px;
+      color: #0f0;
+      font-family: inherit;
+      font-size: 18px;
+      cursor: pointer;
+      transition: all 0.3s;
+      text-align: left;
+    }
+
+    .level-btn:hover {
+      background: rgba(0, 255, 0, 0.15);
+      border-color: #0f0;
+      transform: scale(1.05);
+      box-shadow: 0 0 20px rgba(0, 255, 0, 0.3);
+    }
+
+    .level-btn .level-name {
+      font-size: 22px;
+      margin-bottom: 5px;
+    }
+
+    .level-btn .level-desc {
+      font-size: 11px;
+      color: #888;
+      line-height: 1.4;
+    }
+
+    .level-btn.hard {
+      border-color: #f80;
+    }
+    .level-btn.hard .level-name {
+      color: #f80;
+    }
+    .level-btn.hard:hover {
+      border-color: #fa0;
+      box-shadow: 0 0 20px rgba(255, 136, 0, 0.3);
+    }
+
+    .level-btn.extreme {
+      border-color: #f00;
+      animation: pulse-red 1.5s ease-in-out infinite;
+    }
+    .level-btn.extreme .level-name {
+      color: #f00;
+    }
+    .level-btn.extreme:hover {
+      border-color: #f44;
+      box-shadow: 0 0 30px rgba(255, 0, 0, 0.5);
+    }
+
+    @keyframes pulse-red {
+      0%, 100% { box-shadow: 0 0 10px rgba(255, 0, 0, 0.2); }
+      50% { box-shadow: 0 0 25px rgba(255, 0, 0, 0.4); }
+    }
+
+    #levelIndicator {
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      color: #0f0;
+      font-size: 14px;
+      text-shadow: 0 0 10px currentColor;
+    }
   </style>
 </head>
 
 <body>
   <a href="../index.html" class="back-btn">← Menu</a>
   <div id="gameContainer">
+    <div id="levelSelect">
+      <h1>SPACE ADVENTURE</h1>
+      <p class="subtitle">Choose your difficulty</p>
+      <button class="level-btn" onclick="startLevel(1)">
+        <div class="level-name">LEVEL 1 - CADET</div>
+        <div class="level-desc">Fewer asteroids, slower enemies.<br>Perfect for beginners!</div>
+      </button>
+      <button class="level-btn hard" onclick="startLevel(2)">
+        <div class="level-name">LEVEL 2 - PILOT</div>
+        <div class="level-desc">More asteroids, faster enemies.<br>A real challenge awaits!</div>
+      </button>
+      <button class="level-btn extreme" onclick="startLevel(3)">
+        <div class="level-name">LEVEL 3 - NIGHTMARE</div>
+        <div class="level-desc">Swarms of indestructible asteroids!<br>Only the brave survive...</div>
+      </button>
+    </div>
     <div id="ui">
       <div id="score">Score: 0</div>
       <div id="phase">Phase: Space Flight</div>
     </div>
+    <div id="levelIndicator"></div>
     <canvas id="gameCanvas" width="900" height="650"></canvas>
     <div id="instructions">Arrow Keys / WASD to move | SPACE to shoot | Land on the Moon!</div>
   </div>
@@ -93,6 +207,64 @@
     const scoreEl = document.getElementById('score');
     const phaseEl = document.getElementById('phase');
     const instructionsEl = document.getElementById('instructions');
+    const levelSelectEl = document.getElementById('levelSelect');
+    const levelIndicatorEl = document.getElementById('levelIndicator');
+
+    // Level configurations
+    const LEVEL_CONFIG = {
+      1: {
+        name: 'CADET',
+        color: '#0f0',
+        cometSpawnRate: 1000,
+        indestructibleChance: 0.1,
+        cometSpeed: { min: 2, max: 4 },
+        alienSpeed: { grunt: 1.5, shooter: 0.8 },
+        alienHealth: { grunt: 30, shooter: 45 },
+        alienSpawnRate: 2200,
+        maxAliens: 4,
+        moonTime: 35,
+        spaceScoreGoal: 80,
+        victoryScore: 280,
+        barrierCount: 0,
+        mineCount: 0
+      },
+      2: {
+        name: 'PILOT',
+        color: '#f80',
+        cometSpawnRate: 650,
+        indestructibleChance: 0.25,
+        cometSpeed: { min: 3, max: 5.5 },
+        alienSpeed: { grunt: 2.5, shooter: 1.3 },
+        alienHealth: { grunt: 50, shooter: 70 },
+        alienSpawnRate: 1600,
+        maxAliens: 6,
+        moonTime: 28,
+        spaceScoreGoal: 120,
+        victoryScore: 400,
+        barrierCount: 0,
+        mineCount: 0
+      },
+      3: {
+        name: 'NIGHTMARE',
+        color: '#f00',
+        cometSpawnRate: 400,
+        indestructibleChance: 0.6,
+        cometSpeed: { min: 4, max: 7 },
+        alienSpeed: { grunt: 3.5, shooter: 2 },
+        alienHealth: { grunt: 70, shooter: 100 },
+        alienSpawnRate: 1200,
+        maxAliens: 8,
+        moonTime: 20,
+        spaceScoreGoal: 150,
+        victoryScore: 500,
+        barrierCount: 3,
+        mineCount: 5
+      }
+    };
+
+    let currentLevel = 1;
+    let levelConfig = LEVEL_CONFIG[1];
+    let gameStarted = false;
 
     // Game state
     let gamePhase = 'space';
@@ -104,10 +276,14 @@
     let screenShakeY = 0;
 
     // Moon timer
-    const MOON_TIME_LIMIT = 25; // seconds
+    let MOON_TIME_LIMIT = 25;
     let moonTimer = MOON_TIME_LIMIT;
     let moonExploding = false;
     let moonExplosionParticles = [];
+
+    // Level 3 obstacles
+    let barriers = [];
+    let mines = [];
 
     // Parallax star layers
     const starLayers = [
@@ -251,13 +427,17 @@
       if (gamePhase !== 'space') return;
       const size = Math.random() * 25 + 18;
       const rand = Math.random();
-      // 25% chance for indestructible asteroid
-      const cometType = rand > 0.75 ? 'asteroid' : (rand > 0.5 ? 'ice' : 'rock');
+      // Use level config for indestructible chance
+      const isIndestructible = rand < levelConfig.indestructibleChance;
+      const cometType = isIndestructible ? 'asteroid' : (rand > 0.5 ? 'ice' : 'rock');
+      const speedRange = levelConfig.cometSpeed;
+      const baseSpeed = Math.random() * (speedRange.max - speedRange.min) + speedRange.min;
+
       comets.push({
         x: canvas.width + 60,
         y: Math.random() * (canvas.height - 100) + 50,
-        vx: -(Math.random() * 3 + (cometType === 'asteroid' ? 3.5 : 2.5)),
-        vy: (Math.random() - 0.5) * 1.5,
+        vx: -(baseSpeed + (cometType === 'asteroid' ? 1 : 0)),
+        vy: (Math.random() - 0.5) * 2,
         radius: cometType === 'asteroid' ? size * 1.3 : size,
         rotation: 0,
         rotationSpeed: (Math.random() - 0.5) * 0.08,
@@ -301,20 +481,54 @@
       if (gamePhase !== 'moon') return;
       const groundY = canvas.height - 100;
       const type = Math.random() > 0.6 ? 'grunt' : 'shooter';
+      const speed = levelConfig.alienSpeed[type];
+      const health = levelConfig.alienHealth[type];
       aliens.push({
         x: canvas.width + 40,
         y: groundY - 55,
         vx: 0,
         width: 40,
         height: 55,
-        speed: type === 'grunt' ? 2 : 1,
-        health: type === 'grunt' ? 40 : 60,
-        maxHealth: type === 'grunt' ? 40 : 60,
+        speed: speed,
+        health: health,
+        maxHealth: health,
         shootTimer: Math.random() * 60 + 40,
         type,
         frame: 0,
         hit: 0
       });
+    }
+
+    // Spawn barriers for level 3
+    function spawnBarriers() {
+      barriers = [];
+      if (levelConfig.barrierCount === 0) return;
+
+      for (let i = 0; i < levelConfig.barrierCount; i++) {
+        barriers.push({
+          x: 250 + i * 220,
+          y: canvas.height - 100 - 80,
+          width: 60,
+          height: 80,
+          pulse: Math.random() * Math.PI * 2
+        });
+      }
+    }
+
+    // Spawn mines for level 3
+    function spawnMines() {
+      mines = [];
+      if (levelConfig.mineCount === 0) return;
+
+      for (let i = 0; i < levelConfig.mineCount; i++) {
+        mines.push({
+          x: 150 + Math.random() * (canvas.width - 300),
+          y: canvas.height - 100 - 25 - Math.random() * 40,
+          radius: 15,
+          pulse: Math.random() * Math.PI * 2,
+          blinkTimer: 0
+        });
+      }
     }
 
     function createExplosion(x, y, color = '#f80', count = 20, speed = 8) {
@@ -773,6 +987,117 @@
       ctx.restore();
     }
 
+    function drawBarrier(barrier) {
+      ctx.save();
+      ctx.translate(barrier.x, barrier.y);
+
+      barrier.pulse += 0.05;
+      const pulseAlpha = 0.3 + Math.sin(barrier.pulse) * 0.15;
+
+      // Outer glow
+      ctx.shadowColor = '#f00';
+      ctx.shadowBlur = 20;
+
+      // Main barrier body - metallic look
+      const grad = ctx.createLinearGradient(0, 0, barrier.width, 0);
+      grad.addColorStop(0, '#333');
+      grad.addColorStop(0.3, '#555');
+      grad.addColorStop(0.5, '#666');
+      grad.addColorStop(0.7, '#555');
+      grad.addColorStop(1, '#333');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, barrier.width, barrier.height);
+
+      // Warning stripes
+      ctx.fillStyle = '#f00';
+      for (let i = 0; i < barrier.height; i += 20) {
+        ctx.fillRect(0, i, barrier.width, 10);
+      }
+
+      // Skull warning icon
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 24px Courier New';
+      ctx.textAlign = 'center';
+      ctx.fillText('☠', barrier.width / 2, barrier.height / 2 + 8);
+
+      // Pulsing border
+      ctx.strokeStyle = `rgba(255, 0, 0, ${pulseAlpha + 0.4})`;
+      ctx.lineWidth = 4;
+      ctx.strokeRect(-2, -2, barrier.width + 4, barrier.height + 4);
+
+      // Corner bolts
+      ctx.fillStyle = '#888';
+      const boltSize = 6;
+      ctx.beginPath();
+      ctx.arc(boltSize, boltSize, boltSize, 0, Math.PI * 2);
+      ctx.arc(barrier.width - boltSize, boltSize, boltSize, 0, Math.PI * 2);
+      ctx.arc(boltSize, barrier.height - boltSize, boltSize, 0, Math.PI * 2);
+      ctx.arc(barrier.width - boltSize, barrier.height - boltSize, boltSize, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.restore();
+    }
+
+    function drawMine(mine) {
+      ctx.save();
+      ctx.translate(mine.x, mine.y);
+
+      mine.pulse += 0.08;
+      mine.blinkTimer++;
+
+      const isBlinking = mine.blinkTimer % 30 < 15;
+
+      // Danger glow
+      const glowGrad = ctx.createRadialGradient(0, 0, mine.radius * 0.5, 0, 0, mine.radius * 2.5);
+      glowGrad.addColorStop(0, `rgba(255, 0, 0, ${isBlinking ? 0.5 : 0.2})`);
+      glowGrad.addColorStop(1, 'rgba(255, 0, 0, 0)');
+      ctx.fillStyle = glowGrad;
+      ctx.beginPath();
+      ctx.arc(0, 0, mine.radius * 2.5, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Mine body
+      const bodyGrad = ctx.createRadialGradient(-mine.radius * 0.3, -mine.radius * 0.3, 0, 0, 0, mine.radius);
+      bodyGrad.addColorStop(0, '#555');
+      bodyGrad.addColorStop(0.7, '#222');
+      bodyGrad.addColorStop(1, '#111');
+      ctx.fillStyle = bodyGrad;
+      ctx.beginPath();
+      ctx.arc(0, 0, mine.radius, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Spikes
+      ctx.fillStyle = '#333';
+      for (let i = 0; i < 8; i++) {
+        const angle = (Math.PI * 2 / 8) * i;
+        ctx.save();
+        ctx.rotate(angle);
+        ctx.beginPath();
+        ctx.moveTo(mine.radius - 2, -4);
+        ctx.lineTo(mine.radius + 10, 0);
+        ctx.lineTo(mine.radius - 2, 4);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+      }
+
+      // Blinking light
+      ctx.fillStyle = isBlinking ? '#f00' : '#600';
+      ctx.beginPath();
+      ctx.arc(0, 0, 5, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Light shine
+      if (isBlinking) {
+        ctx.fillStyle = '#fff';
+        ctx.beginPath();
+        ctx.arc(-1, -1, 2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      ctx.restore();
+    }
+
     function drawMoon() {
       // Moon glow
       const glowGrad = ctx.createRadialGradient(moon.x, moon.y, moon.radius, moon.x, moon.y, moon.radius * 1.8);
@@ -1037,12 +1362,19 @@
             gamePhase = 'moon';
             moonTimer = MOON_TIME_LIMIT;
             phaseEl.textContent = 'Phase: Moon Battle!';
-            instructionsEl.textContent = 'Defeat aliens before the moon explodes! Arrow Keys/WASD + SPACE to shoot';
+            instructionsEl.textContent = currentLevel === 3
+              ? 'NIGHTMARE MODE! Avoid barriers and mines! Arrow Keys/WASD + SPACE'
+              : 'Defeat aliens before the moon explodes! Arrow Keys/WASD + SPACE to shoot';
             stas.y = canvas.height - 100 - stas.height;
             stas.x = 100;
             stas.health = Math.min(stas.health + 30, stas.maxHealth);
             bullets = [];
             healthPacks = [];
+
+            // Spawn level 3 obstacles
+            spawnBarriers();
+            spawnMines();
+
             for (let i = 0; i < 3; i++) {
               setTimeout(() => spawnAlien(), i * 800);
             }
@@ -1307,14 +1639,67 @@
       });
 
       // Phase transitions
-      if (gamePhase === 'space' && score >= 100) {
+      if (gamePhase === 'space' && score >= levelConfig.spaceScoreGoal) {
         gamePhase = 'landing';
         phaseEl.textContent = 'Phase: Land on Moon!';
       }
 
       // Victory condition
-      if (gamePhase === 'moon' && score >= 350) {
+      if (gamePhase === 'moon' && score >= levelConfig.victoryScore) {
         victory = true;
+      }
+
+      // Barrier collisions (Staš)
+      if (gamePhase === 'moon') {
+        barriers.forEach(barrier => {
+          if (stas.invincible === 0 &&
+            stas.x + stas.width > barrier.x && stas.x < barrier.x + barrier.width &&
+            stas.y + stas.height > barrier.y && stas.y < barrier.y + barrier.height) {
+            stas.health -= 20;
+            stas.invincible = 45;
+            stas.vx = -8 * stas.direction;
+            addScreenShake(12);
+            createSparks(stas.x + stas.width / 2, stas.y + stas.height / 2);
+            if (stas.health <= 0) {
+              createExplosion(stas.x + stas.width / 2, stas.y + stas.height / 2, '#f44', 30, 8);
+              gameOver = true;
+            }
+          }
+        });
+
+        // Mine collisions (Staš)
+        mines = mines.filter(mine => {
+          const dx = (stas.x + stas.width / 2) - mine.x;
+          const dy = (stas.y + stas.height / 2) - mine.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+
+          if (dist < mine.radius + 20 && stas.invincible === 0) {
+            stas.health -= 35;
+            stas.invincible = 60;
+            stas.vx = (stas.x < mine.x ? -1 : 1) * 12;
+            stas.velocityY = -10;
+            addScreenShake(20);
+            createExplosion(mine.x, mine.y, '#f80', 30, 10);
+            if (stas.health <= 0) {
+              createExplosion(stas.x + stas.width / 2, stas.y + stas.height / 2, '#f44', 30, 8);
+              gameOver = true;
+            }
+            return false; // Mine explodes
+          }
+          return true;
+        });
+
+        // Bullets blocked by barriers
+        bullets = bullets.filter(b => {
+          for (const barrier of barriers) {
+            if (b.x > barrier.x && b.x < barrier.x + barrier.width &&
+              b.y > barrier.y && b.y < barrier.y + barrier.height) {
+              createSparks(b.x, b.y);
+              return false;
+            }
+          }
+          return true;
+        });
       }
 
       // Moon timer and explosion
@@ -1439,6 +1824,10 @@
         ctx.font = 'bold 14px Courier New';
         ctx.fillText('SHIP', 15, 42);
       } else {
+        // Draw barriers and mines first (behind characters)
+        barriers.forEach(drawBarrier);
+        mines.forEach(drawMine);
+
         healthPacks.forEach(drawHealthPack);
         aliens.forEach(alien => {
           drawAlien(alien);
@@ -1587,9 +1976,12 @@
         ctx.fillStyle = '#fff';
         ctx.font = '24px Courier New';
         ctx.fillText(`Final Score: ${score}`, canvas.width / 2, canvas.height / 2 + 40);
+        ctx.fillStyle = levelConfig.color;
+        ctx.font = '16px Courier New';
+        ctx.fillText(`Level ${currentLevel}: ${levelConfig.name}`, canvas.width / 2, canvas.height / 2 + 70);
         ctx.fillStyle = '#888';
         ctx.font = '18px Courier New';
-        ctx.fillText('Press R to restart', canvas.width / 2, canvas.height / 2 + 80);
+        ctx.fillText('Press R to select level', canvas.width / 2, canvas.height / 2 + 100);
         ctx.textAlign = 'left';
       }
 
@@ -1624,11 +2016,25 @@
         ctx.fillStyle = '#fff';
         ctx.font = '24px Courier New';
         ctx.fillText(`Final Score: ${score}`, canvas.width / 2, canvas.height / 2 + 55);
+        ctx.fillStyle = levelConfig.color;
+        ctx.font = '16px Courier New';
+        ctx.fillText(`Level ${currentLevel}: ${levelConfig.name} COMPLETED!`, canvas.width / 2, canvas.height / 2 + 85);
         ctx.fillStyle = '#888';
         ctx.font = '18px Courier New';
-        ctx.fillText('Press R to play again', canvas.width / 2, canvas.height / 2 + 95);
+        ctx.fillText('Press R to select level', canvas.width / 2, canvas.height / 2 + 115);
         ctx.textAlign = 'left';
       }
+    }
+
+    function startLevel(level) {
+      currentLevel = level;
+      levelConfig = LEVEL_CONFIG[level];
+      MOON_TIME_LIMIT = levelConfig.moonTime;
+      gameStarted = true;
+      levelSelectEl.style.display = 'none';
+      levelIndicatorEl.textContent = `Level ${level}: ${levelConfig.name}`;
+      levelIndicatorEl.style.color = levelConfig.color;
+      restart();
     }
 
     function restart() {
@@ -1658,34 +2064,58 @@
       healthPacks = [];
       cometTrails = [];
       muzzleFlashes = [];
+      barriers = [];
+      mines = [];
       scoreEl.textContent = 'Score: 0';
       phaseEl.textContent = 'Phase: Space Flight';
       instructionsEl.textContent = 'Arrow Keys / WASD to move | SPACE to shoot | Land on the Moon!';
     }
 
+    function showLevelSelect() {
+      gameStarted = false;
+      levelSelectEl.style.display = 'flex';
+    }
+
     document.addEventListener('keydown', e => {
       if (e.code === 'KeyR' && (gameOver || victory)) {
-        restart();
+        showLevelSelect();
       }
     });
 
-    // Spawn timers
-    setInterval(() => {
-      if (gamePhase === 'space') spawnComet();
-    }, 700);
+    // Dynamic spawn timers
+    let cometSpawnTimer = 0;
+    let alienSpawnTimer = 0;
+    let lastCometSpawn = 0;
+    let lastAlienSpawn = 0;
 
-    setInterval(() => {
-      if (gamePhase === 'moon' && aliens.length < 6) spawnAlien();
-    }, 1800);
+    function handleSpawning() {
+      if (!gameStarted) return;
+
+      const now = Date.now();
+
+      // Comet spawning
+      if (gamePhase === 'space' && now - lastCometSpawn > levelConfig.cometSpawnRate) {
+        spawnComet();
+        lastCometSpawn = now;
+      }
+
+      // Alien spawning
+      if (gamePhase === 'moon' && aliens.length < levelConfig.maxAliens && now - lastAlienSpawn > levelConfig.alienSpawnRate) {
+        spawnAlien();
+        lastAlienSpawn = now;
+      }
+    }
 
     // Health pack spawning
     setInterval(() => {
+      if (!gameStarted) return;
       if ((gamePhase === 'space' || gamePhase === 'landing') && Math.random() > 0.5) {
         spawnHealthPack();
       }
     }, 5000);
 
     setInterval(() => {
+      if (!gameStarted) return;
       if (gamePhase === 'moon' && Math.random() > 0.4) {
         spawnHealthPack();
       }
@@ -1693,7 +2123,10 @@
 
     // Game loop
     function gameLoop() {
-      update();
+      if (gameStarted) {
+        handleSpawning();
+        update();
+      }
       draw();
       requestAnimationFrame(gameLoop);
     }
